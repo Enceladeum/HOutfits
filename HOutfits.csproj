@@ -47,13 +47,17 @@
       across 2.x. Do NOT add ImGui.NET — current Dalamud ships its own ImGui binding
       (Dalamud.Bindings.ImGui), pulled in transitively by the SDK.
 
-      At runtime these IPC types resolve against Glamourer's own loaded copy of the
-      assembly, so the plugin loads with just HOutfits.dll — Glamourer.Api.dll does
-      not need to ship next to it. For a release build, adding
-      ExcludeAssets="runtime" keeps the redundant DLL out of the packaged zip.
-      Left as a plain reference here for the simplest local dev build.
+      ExcludeAssets="runtime" is REQUIRED, not a size optimization. At runtime these
+      IPC types must resolve against Glamourer's OWN loaded copy of Glamourer.Api.
+      If a Glamourer.Api.dll ships next to HOutfits.dll, Dalamud's load context picks
+      up that local copy and you get two distinct CLR type identities for the same
+      IPC types — the version handshake/cast against Glamourer's copy then fails and
+      the plugin silently no-ops (or fails to register). Referencing compile-only
+      (ExcludeAssets="runtime", i.e. compile against it but don't copy it to output)
+      is the standard Dalamud treatment for IPC-shim packages, same as the Dalamud
+      reference assemblies themselves. Keep this even for local dev builds.
     -->
-    <PackageReference Include="Glamourer.Api" Version="2.*" />
+    <PackageReference Include="Glamourer.Api" Version="2.*" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>
