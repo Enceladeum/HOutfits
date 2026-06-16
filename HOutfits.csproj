@@ -1,0 +1,59 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+
+  <PropertyGroup>
+    <!--
+      Match the Dalamud.NET.Sdk version to the Dalamud you load against. Your
+      Dalamud.dll is 15.x, so the SDK is 15.0.0 (same as HaselDebug). The SDK
+      version drives the stamped DalamudApiLevel; an OLDER SDK stamps an older
+      level and Dalamud then flags the plugin "outdated and incompatible" even
+      though it loads and runs fine. Current Dalamud (15.x) targets .NET 10, so
+      the TFM is net10.0-windows; a mismatch trips CS1705 + a swarm of MSB3277
+      9-vs-10 conflicts. On an older net9 Dalamud, drop to SDK 12.x / net9.0-windows.
+    -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <Version>0.1.0.0</Version>
+
+    <!--
+      Manifest metadata lives here, NOT in a hand-written .json. The
+      Dalamud.NET.Sdk generates the plugin manifest at build time and stamps the
+      CORRECT DalamudApiLevel from the SDK/Dalamud you build against. A hardcoded
+      DalamudApiLevel in a .json is the usual cause of a false "outdated and
+      incompatible" banner when the live Dalamud has moved past that number.
+
+      Prop names per the Dalamud v14 csproj-manifest docs. Note Author is
+      SINGULAR (not the NuGet "Authors"); Tags/CategoryTags are semicolon-
+      separated. AssemblyVersion is what the manifest reports as the version.
+    -->
+    <Name>HOutfits</Name>
+    <InternalName>HOutfits</InternalName>
+    <Author>The Enceladeum</Author>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <Punchline>Apply full sets to your character in Glamourer with a single click.</Punchline>
+    <Description>Lists the game's named outfit sets (the MirageStoreSetItem data) and applies a whole set — or any single piece — to your character through Glamourer, instead of picking each item from a dropdown. Sets and individual pieces are searchable by name. Complete named sets only; loose items that aren't part of a named set aren't listed. Requires Glamourer.</Description>
+    <RepoUrl>https://github.com/Enceladeum/HOutfits</RepoUrl>
+    <Tags>glamour;glamourer;outfit;outfits;fashion;wardrobe;qol</Tags>
+    <CategoryTags>other</CategoryTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Glamourer.Api: the official consumer IPC package (Glamourer.Api.IpcSubscribers.*,
+      Glamourer.Api.Enums.*). The 2.x line is current; NuGet resolves the latest 2.x
+      (2.8.x at time of writing). The SetItem.V3 signature this plugin uses is stable
+      across 2.x. Do NOT add ImGui.NET — current Dalamud ships its own ImGui binding
+      (Dalamud.Bindings.ImGui), pulled in transitively by the SDK.
+
+      At runtime these IPC types resolve against Glamourer's own loaded copy of the
+      assembly, so the plugin loads with just HOutfits.dll — Glamourer.Api.dll does
+      not need to ship next to it. For a release build, adding
+      ExcludeAssets="runtime" keeps the redundant DLL out of the packaged zip.
+      Left as a plain reference here for the simplest local dev build.
+    -->
+    <PackageReference Include="Glamourer.Api" Version="2.*" />
+  </ItemGroup>
+
+</Project>

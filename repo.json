@@ -1,0 +1,29 @@
+[
+  {
+    "Author": "The Enceladeum",
+    "Name": "HOutfits",
+    "InternalName": "HOutfits",
+    "Punchline": "Apply full sets to your character in Glamourer with a single click.",
+    "Description": "Lists the game's named outfit sets (the MirageStoreSetItem data) and applies a whole set — or any single piece — to your character through Glamourer, instead of picking each item from a dropdown. Sets and individual pieces are searchable by name. Complete named sets only; loose items that aren't part of a named set aren't listed. Requires Glamourer.",
+    "Changelog": "Initial release.",
+    "Tags": [ "glamour", "glamourer", "outfit", "outfits", "fashion", "wardrobe", "qol" ],
+    "CategoryTags": [ "other" ],
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/Enceladeum/HOutfits",
+    "AssemblyVersion": "0.1.0.0",
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "AcceptsFeedback": true,
+    "DownloadCount": 0,
+    "LastUpdate": 1781652307,
+    "DownloadLinkInstall": "https://github.com/Enceladeum/HOutfits/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/Enceladeum/HOutfits/releases/latest/download/latest.zip",
+    "DownloadLinkTesting": "https://github.com/Enceladeum/HOutfits/releases/latest/download/latest.zip",
+    "IconUrl": "https://raw.githubusercontent.com/Enceladeum/HOutfits/main/images/icon.png"
+  }
+]
