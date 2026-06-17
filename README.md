@@ -2,13 +2,7 @@
 
 Apply a complete FFXIV outfit set to **yourself** in one click, routed through
 [Glamourer](https://github.com/Ottermandias/Glamourer) — instead of selecting
-each piece from Glamourer's dropdown.
-
-It reads the game's named outfit sets (the `MirageStoreSetItem` sheet — the same
-data behind the in-game fitting room's outfit list): set icon, set name, and the
-component pieces. The difference from the fitting room is where the click goes —
-HOutfits applies the set through Glamourer, as an appearance, rather than a
-temporary try-on.
+each piece from Glamourer's dropdown: HOutfits applies the set through Glamourer.
 
 Open with `/houtfits`, filter, and:
 
@@ -37,9 +31,6 @@ set isn't listed — for arbitrary single items, use Glamourer directly.
 3. Open the plugin installer (`/xlplugins`), search for **HOutfits**, and click
    **Install**.
 
-Requires [Glamourer](https://github.com/Ottermandias/Glamourer) to be installed
-and enabled.
-
 ### Local dev build
 
 To run a build you made yourself:
@@ -51,12 +42,7 @@ To run a build you made yourself:
    scan button.
 3. **HOutfits** appears in **Installed Dev Plugins**; enable it.
 
-> If you previously registered an older build under a different name
-> (e.g. "OutfitGlamourer"), remove that stale Dev Plugin Location first — the
-> rename makes this a different plugin to Dalamud, and a leftover entry can
-> shadow the new one.
-
-## How it works (and why it's shaped this way)
+## How it works
 
 **Data.** `OutfitService` walks the `MirageStoreSetItem` sheet. That sheet has no
 name or category columns — only eleven per-slot link columns (`Head`, `Body`,
@@ -146,15 +132,13 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
 
 - An item only applies if it's a valid glamour target for your character in
   Glamourer's eyes; non-human actors return `ActorNotHuman`.
-- This sets *appearance*, like try-on — it does not unlock, acquire, or move any
-  item. You're not wearing it "for real," same as a glamour.
 - Sigs/IPC labels drift across Glamourer versions; if applies silently no-op
   after a Glamourer update, check `Available` and bump the `Glamourer.Api`
   package.
 
 ## Acknowledgements
 
-This plugin's core idea — *apply a whole outfit set at once* — came from the
+This plugin's core idea to *apply a whole outfit set at once* came from the
 **Outfits** tab in [HaselDebug](https://github.com/Haselnussbomber/HaselDebug)
 by Haselnussbomber, which surfaces the game's `MirageStoreSetItem` data and lets
 you try a full set on in the fitting room. Thanks to Haselnussbomber for a great
@@ -174,22 +158,3 @@ or the `HaselCommon` library — is used or linked here.
 
 MIT — see [LICENSE](LICENSE). You may use, modify, and redistribute this freely,
 including in closed-source projects.
-
-### Why MIT, given HaselDebug is AGPL-3.0
-
-HaselDebug (and Haselnussbomber's other plugins, and the `HaselCommon` library)
-are licensed under **AGPL-3.0**. That's worth addressing directly, because
-"inspired by an AGPL project" can look like a licensing problem. It isn't one
-here, for a simple reason: **copyright protects expression — actual code — not
-ideas, methods, or facts.** What carried over from HaselDebug is the *concept*
-("iterate the outfit sheet, apply each piece"), which copyright does not cover.
-None of HaselDebug's *code* was copied, and the `HaselCommon` AGPL library is not
-referenced or bundled (the project depends only on the Dalamud SDK and
-`Glamourer.Api`). The game data is Square Enix's; the apply path is Glamourer's
-API. With no AGPL-licensed expression incorporated, there is no derivative work,
-and the AGPL's copyleft terms do not extend to this plugin — so it is free to be
-licensed under MIT.
-
-This note is informational, not legal advice. If you fork this and pull in
-`HaselCommon` or copy AGPL-licensed code from any of these projects, that changes
-the analysis and your fork would need to honour the AGPL.
