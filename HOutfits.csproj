@@ -15,7 +15,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>x64</Platforms>
-    <Version>0.1.0.0</Version>
+    <Version>0.1.1.0</Version>
 
     <!--
       Manifest metadata lives here, NOT in a hand-written .json. The
@@ -31,7 +31,7 @@
     <Name>HOutfits</Name>
     <InternalName>HOutfits</InternalName>
     <Author>The Enceladeum</Author>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <AssemblyVersion>0.1.1.0</AssemblyVersion>
     <Punchline>Apply full sets to your character in Glamourer with a single click.</Punchline>
     <Description>Lists the game's named outfit sets (the MirageStoreSetItem data) and applies a whole set — or any single piece — to your character through Glamourer, instead of picking each item from a dropdown. Sets and individual pieces are searchable by name. Complete named sets only; loose items that aren't part of a named set aren't listed. Requires Glamourer.</Description>
     <RepoUrl>https://github.com/Enceladeum/HOutfits</RepoUrl>
@@ -47,17 +47,24 @@
       across 2.x. Do NOT add ImGui.NET — current Dalamud ships its own ImGui binding
       (Dalamud.Bindings.ImGui), pulled in transitively by the SDK.
 
-      ExcludeAssets="runtime" is REQUIRED, not a size optimization. At runtime these
-      IPC types must resolve against Glamourer's OWN loaded copy of Glamourer.Api.
-      If a Glamourer.Api.dll ships next to HOutfits.dll, Dalamud's load context picks
-      up that local copy and you get two distinct CLR type identities for the same
-      IPC types — the version handshake/cast against Glamourer's copy then fails and
-      the plugin silently no-ops (or fails to register). Referencing compile-only
-      (ExcludeAssets="runtime", i.e. compile against it but don't copy it to output)
-      is the standard Dalamud treatment for IPC-shim packages, same as the Dalamud
-      reference assemblies themselves. Keep this even for local dev builds.
+      Glamourer.Api.dll MUST ship next to HOutfits.dll — do NOT add
+      ExcludeAssets="runtime". Each Dalamud plugin loads in its OWN isolated
+      AssemblyLoadContext; it does not inherit Glamourer's already-loaded copy of
+      Glamourer.Api. With the DLL missing from the plugin folder, Dalamud's
+      GetTypes() scan for IDalamudPlugin throws ReflectionTypeLoadException ->
+      FileNotFoundException("Glamourer.Api, Version=2.8.2.0 ...") and the plugin
+      fails to load outright (confirmed in /xllog after it was excluded once).
+
+      Shipping our own copy does NOT clash with Glamourer's: IPC crosses the ALC
+      boundary by string label with primitive/marshalled args (enums travel as their
+      integer values), so the two Glamourer.Api copies never exchange CLR instances
+      and never conflict. Every Glamourer/Penumbra consumer ships the shim this way.
+      The "don't bundle it" rule applies ONLY to assemblies Dalamud itself provides
+      (Dalamud.Bindings.ImGui, FFXIVClientStructs, Lumina, Dalamud) — bundling those
+      duplicates Dalamud's shared copy and conflicts. Glamourer.Api is third-party,
+      not Dalamud-provided, so a plain PackageReference (copies it to output) is right.
     -->
-    <PackageReference Include="Glamourer.Api" Version="2.*" ExcludeAssets="runtime" />
+    <PackageReference Include="Glamourer.Api" Version="2.*" />
   </ItemGroup>
 
 </Project>

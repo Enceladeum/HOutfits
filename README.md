@@ -114,11 +114,15 @@ Requires the Dalamud dev environment (the `Dalamud.NET.Sdk` resolves the game
 references) and restores the **`Glamourer.Api`** NuGet package, which provides
 `Glamourer.Api.IpcSubscribers.*` and `Glamourer.Api.Enums.*`. Pin the
 `Glamourer.Api` version in the `.csproj` to match the Glamourer build you target
-(the `SetItem.V3` signature used here). At runtime these IPC types resolve
-against Glamourer's own loaded copy of the assembly, so the plugin loads fine
-with just `HOutfits.dll` — `Glamourer.Api.dll` does not need to ship alongside
-it. (For a release build you can add `ExcludeAssets="runtime"` to the package
-reference to keep the redundant DLL out of the zip.)
+(the `SetItem.V3` signature used here). `Glamourer.Api.dll` **ships inside
+`latest.zip`** next to `HOutfits.dll`, and must stay there. Each Dalamud plugin
+loads in its own isolated `AssemblyLoadContext`, which does **not** inherit
+Glamourer's already-loaded copy — so if `Glamourer.Api.dll` is absent from the
+plugin folder the load aborts with `ReflectionTypeLoadException` /
+`FileNotFoundException: Glamourer.Api`. Do **not** add `ExcludeAssets="runtime"`;
+a plain `PackageReference` copies the DLL to output, which is what you want. The
+two copies (ours and Glamourer's) don't conflict — IPC crosses the load-context
+boundary by string label with primitive args, never by shared CLR instances.
 
 The `Dalamud.NET.Sdk` version in the `.csproj` must match your installed Dalamud
 (15.x here). There is no hand-written manifest `.json`: the SDK generates the
