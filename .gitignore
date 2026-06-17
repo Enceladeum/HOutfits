@@ -24,3 +24,6 @@ x86/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+## Maintainer-only notes — kept locally, never published to the public repo
+MAINTAINING.md
