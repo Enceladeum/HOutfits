@@ -25,5 +25,32 @@
     "DownloadLinkUpdate": "https://github.com/Enceladeum/HOutfits/releases/latest/download/latest.zip",
     "DownloadLinkTesting": "https://github.com/Enceladeum/HOutfits/releases/latest/download/latest.zip",
     "IconUrl": "https://raw.githubusercontent.com/Enceladeum/HOutfits/main/images/icon.png"
+  },
+  {
+    "Author": "The Enceladeum",
+    "Name": "Cosmic Claw",
+    "InternalName": "HClawsweep",
+    "Punchline": "Haha claw goes whoosh",
+    "Description": "Unlocks the Cosmic Predator's Magitek Claw sweep animation locally (client-side only, no server round-trip). Commands: /clawsweep (one-time) and /clawsweeploop (loop).",
+    "Changelog": "0.1.0: initial release.",
+    "Tags": [ "cosmic", "mount", "animation", "predator" ],
+    "CategoryTags": [ "other" ],
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "ApplicableVersion": "any",
+    "RepoUrl": "https://github.com/Enceladeum/HClawsweep",
+    "AssemblyVersion": "0.1.0.0",
+    "DalamudApiLevel": 15,
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "AcceptsFeedback": true,
+    "DownloadCount": 0,
+    "LastUpdate": 1781693952,
+    "DownloadLinkInstall": "https://github.com/Enceladeum/HClawsweep/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/Enceladeum/HClawsweep/releases/latest/download/latest.zip",
+    "DownloadLinkTesting": "https://github.com/Enceladeum/HClawsweep/releases/latest/download/latest.zip",
+    "IconUrl": "https://raw.githubusercontent.com/Enceladeum/HClawsweep/main/images/icon.png"
   }
 ]
