@@ -33,7 +33,7 @@
     <Author>The Enceladeum</Author>
     <AssemblyVersion>0.1.2.0</AssemblyVersion>
     <Punchline>Apply full sets to your character in Glamourer with a single click.</Punchline>
-    <Description>Lists the game's named outfit sets (the MirageStoreSetItem data) and applies a whole set — or any single piece — to your character through Glamourer, instead of picking each item from a dropdown. Sets and individual pieces are searchable by name. Complete named sets only; loose items that aren't part of a named set aren't listed. Requires Glamourer.</Description>
+    <Description>Lists the game's complete named sets and applies a whole set or any single piece to your character through Glamourer, instead of picking each item from a dropdown.</Description>
     <RepoUrl>https://github.com/Enceladeum/HOutfits</RepoUrl>
     <Tags>glamour;glamourer;outfit;outfits;fashion;wardrobe;qol</Tags>
     <CategoryTags>other</CategoryTags>
