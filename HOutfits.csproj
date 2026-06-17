@@ -15,7 +15,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>x64</Platforms>
-    <Version>0.1.1.0</Version>
+    <Version>0.1.2.0</Version>
 
     <!--
       Manifest metadata lives here, NOT in a hand-written .json. The
@@ -31,12 +31,29 @@
     <Name>HOutfits</Name>
     <InternalName>HOutfits</InternalName>
     <Author>The Enceladeum</Author>
-    <AssemblyVersion>0.1.1.0</AssemblyVersion>
+    <AssemblyVersion>0.1.2.0</AssemblyVersion>
     <Punchline>Apply full sets to your character in Glamourer with a single click.</Punchline>
     <Description>Lists the game's named outfit sets (the MirageStoreSetItem data) and applies a whole set — or any single piece — to your character through Glamourer, instead of picking each item from a dropdown. Sets and individual pieces are searchable by name. Complete named sets only; loose items that aren't part of a named set aren't listed. Requires Glamourer.</Description>
     <RepoUrl>https://github.com/Enceladeum/HOutfits</RepoUrl>
     <Tags>glamour;glamourer;outfit;outfits;fashion;wardrobe;qol</Tags>
     <CategoryTags>other</CategoryTags>
+
+    <!--
+      IconUrl is what gives the INSTALLED plugin its icon. Dalamud resolves a
+      repo-installed (third-party) plugin's icon by DOWNLOADING manifest.IconUrl
+      (PluginImageCache.DownloadPluginIconAsync -> GetPluginIconUrl -> returns
+      manifest.IconUrl for third-party). The generated HOutfits.json manifest only
+      carries IconUrl if this property is set (DalamudPackager.LoadCsprojManifest:
+      `if (!IsNullOrEmpty(IconUrl)) manifest.IconUrl = IconUrl`). Without it the
+      installed plugin shows a "?" placeholder even though the installer LISTING
+      icon (which comes from repo.json's own IconUrl) resolves fine — that mismatch
+      was the 0.1.1 symptom. Do NOT try to bundle icon.png into latest.zip instead:
+      DalamudPackager deliberately strips icon.png from the zip (HandleImages), so
+      the only path to an installed icon is this URL. Keep it identical to
+      repo.json's IconUrl. (Dev plugins are the exception — they read the local
+      images/icon.png next to the DLL; see the None item below.)
+    -->
+    <IconUrl>https://raw.githubusercontent.com/Enceladeum/HOutfits/main/images/icon.png</IconUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -65,6 +82,20 @@
       not Dalamud-provided, so a plain PackageReference (copies it to output) is right.
     -->
     <PackageReference Include="Glamourer.Api" Version="2.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Copy images/icon.png next to the built DLL so a LOCAL DEV build (loaded via
+      Dalamud's Dev Plugin Locations from bin/Release/HOutfits.dll) shows its icon.
+      Dalamud's dev-plugin path reads images/icon.png from the DLL's own folder
+      (PluginImageCache.GetPluginIconFileInfo), and CopyToOutputDirectory lands it
+      at bin/Release/images/icon.png. This is ONLY for the dev-load case: it does
+      NOT put the icon in latest.zip (DalamudPackager strips icon.png from the zip
+      by design — HandleImages), and it is NOT how an installed plugin gets its
+      icon — that comes from the manifest IconUrl set in the PropertyGroup above.
+    -->
+    <None Include="images\icon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
