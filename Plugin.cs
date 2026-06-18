@@ -22,9 +22,10 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin()
     {
+        var config   = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var glam     = new GlamourerIpc(PluginInterface);
         var outfits  = new OutfitService(DataManager, Log);
-        _main        = new MainWindow(outfits, glam, TextureProvider, Log);
+        _main        = new MainWindow(outfits, glam, TextureProvider, Log, config);
 
         _windows.AddWindow(_main);
 

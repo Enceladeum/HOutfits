@@ -15,7 +15,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>x64</Platforms>
-    <Version>0.1.2.0</Version>
+    <Version>0.1.3.0</Version>
 
     <!--
       Manifest metadata lives here, NOT in a hand-written .json. The
@@ -31,7 +31,7 @@
     <Name>HOutfits</Name>
     <InternalName>HOutfits</InternalName>
     <Author>The Enceladeum</Author>
-    <AssemblyVersion>0.1.2.0</AssemblyVersion>
+    <AssemblyVersion>0.1.3.0</AssemblyVersion>
     <Punchline>Apply full sets to your character in Glamourer with a single click.</Punchline>
     <Description>Lists the game's complete named sets and applies a whole set or any single piece to your character through Glamourer, instead of picking each item from a dropdown.</Description>
     <RepoUrl>https://github.com/Enceladeum/HOutfits</RepoUrl>

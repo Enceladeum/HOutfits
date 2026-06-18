@@ -141,15 +141,29 @@ public sealed class OutfitService
     }
 
     /// <summary>
-    /// Apply a whole set to the actor at <paramref name="objectIndex"/>.
-    /// Returns (applied, failed) counts.
+    /// The accessory slots: earrings, necklace, bracelets, and rings. Used to
+    /// optionally exclude them from a whole-set apply (the chest-and-armour-only
+    /// case, leaving the wearer's own accessories or hidden slots untouched).
     /// </summary>
-    public (int applied, int failed) Apply(OutfitSet set, GlamourerIpc glam, int objectIndex)
+    public static bool IsAccessory(ApiEquipSlot slot)
+        => slot is ApiEquipSlot.Ears or ApiEquipSlot.Neck or ApiEquipSlot.Wrists
+            or ApiEquipSlot.RFinger or ApiEquipSlot.LFinger;
+
+    /// <summary>
+    /// Apply a whole set to the actor at <paramref name="objectIndex"/>. When
+    /// <paramref name="includeAccessories"/> is false, accessory slots are
+    /// skipped. Returns (applied, failed) counts over the pieces that were
+    /// actually attempted.
+    /// </summary>
+    public (int applied, int failed) Apply(OutfitSet set, GlamourerIpc glam, int objectIndex, bool includeAccessories)
     {
         var applied = 0;
         var failed  = 0;
         foreach (var piece in set.Pieces)
         {
+            if (!includeAccessories && IsAccessory(piece.Slot))
+                continue;
+
             if (ApplyPiece(piece, glam, objectIndex))
                 applied++;
             else

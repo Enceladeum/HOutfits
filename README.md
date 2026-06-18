@@ -7,6 +7,12 @@ each piece from Glamourer's dropdown: HOutfits applies the set through Glamourer
 Open with `/houtfits`, filter, and:
 
 - **Click a set name** → the whole set is applied to you.
+- **"Include accessories" toggle** at the top of the window: when off, applying a
+  whole set skips earrings, necklace, bracelets, and rings, so a set drops onto
+  your glamour without disturbing accessories you keep hidden or glamoured
+  separately. The choice persists across sessions, and you can still click a
+  single accessory icon to apply just that piece. (Excluded slots show dimmed in
+  the set's piece row.)
 - **Click a single piece icon** → just that piece is added (your other slots are
   left as they are — handy to grab only the gloves from a set).
 - **Filter by set *or* item name** — typing `ushanka` finds the Imperial sets
@@ -71,8 +77,10 @@ piece name, so the filter is a cheap substring match that covers piece names too
 - dye is left untouched.
 
 A whole-set apply is one `SetItem` per piece; a single-piece click is one
-`SetItem` for that one slot (additive). The status line reports results, with
-failures logged to `/xllog`.
+`SetItem` for that one slot (additive). With **Include accessories** off, the
+whole-set path skips the accessory slots and sends only head, body, hands, legs,
+and feet; an individual accessory click still applies that piece regardless. The
+status line reports results, with failures logged to `/xllog`.
 
 **Target.** Always the local player (`objectIndex = 0`). Glamourer's IPC does
 not expose its own currently-selected actor, so "apply to whoever's selected in
@@ -126,6 +134,7 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
 - `OutfitService.cs` — reads MirageStoreSetItem's per-slot columns, apply loop.
 - `GlamourerIpc.cs` — the three IPC calls (version check, `SetItem`, revert).
 - `MainWindow.cs` — the ripped-down table UI.
+- `Configuration.cs`: persisted settings (the **Include accessories** toggle).
 - `HOutfits.csproj` — project + manifest metadata (no separate `.json`).
 
 ## Caveats

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
@@ -25,6 +26,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly GlamourerIpc _glam;
     private readonly ITextureProvider _textures;
     private readonly IPluginLog _log;
+    private readonly Configuration _config;
 
     private string _filter = string.Empty;
     private OutfitSet? _pendingSet;
@@ -33,13 +35,14 @@ public sealed class MainWindow : Window, IDisposable
     private string _status = string.Empty;
     private Vector4 _statusColor = new(0.7f, 0.7f, 0.7f, 1f);
 
-    public MainWindow(OutfitService outfits, GlamourerIpc glam, ITextureProvider textures, IPluginLog log)
+    public MainWindow(OutfitService outfits, GlamourerIpc glam, ITextureProvider textures, IPluginLog log, Configuration config)
         : base("HOutfits###HOutfitsMain")
     {
         _outfits  = outfits;
         _glam     = glam;
         _textures = textures;
         _log      = log;
+        _config   = config;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -75,6 +78,20 @@ public sealed class MainWindow : Window, IDisposable
                 "Glamourer isn't loaded (or is too old). Install/update it to apply outfits.");
             return;
         }
+
+        // Accessories toggle — governs WHOLE-SET applies only. When off, a set
+        // skips earrings/necklace/bracelets/rings; clicking a single accessory
+        // icon still applies it. Persisted so the choice sticks across sessions.
+        var includeAccessories = _config.IncludeAccessories;
+        if (ImGui.Checkbox("Include accessories", ref includeAccessories))
+        {
+            _config.IncludeAccessories = includeAccessories;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "When off, applying a whole set skips earrings, necklace, bracelets, and rings.\n" +
+                "Click an individual accessory icon to apply just that piece regardless.");
 
         // Revert button — top of window, always visible. Mirrors the in-game
         // "/glamour revert <me>": full revert (equipment + customization) to game.
@@ -125,14 +142,18 @@ public sealed class MainWindow : Window, IDisposable
             if (ImGui.IsItemHovered())
             {
                 ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                ImGui.SetTooltip($"Apply \"{set.Name}\" to yourself ({set.Pieces.Count} pieces)");
+                var count = _config.IncludeAccessories
+                    ? set.Pieces.Count
+                    : set.Pieces.Count(p => !OutfitService.IsAccessory(p.Slot));
+                ImGui.SetTooltip($"Apply \"{set.Name}\" to yourself ({count} pieces)");
             }
 
             // --- Pieces column: each icon is individually clickable ---
             ImGui.TableNextColumn();
             foreach (var piece in set.Pieces)
             {
-                DrawIcon(piece.Icon);
+                var dimmed = !_config.IncludeAccessories && OutfitService.IsAccessory(piece.Slot);
+                DrawIcon(piece.Icon, dimmed);
                 if (ImGui.IsItemClicked())
                     _pendingPiece = piece; // apply just this piece, next frame
                 if (ImGui.IsItemHovered())
@@ -148,12 +169,19 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.EndTable();
     }
 
-    private void DrawIcon(uint iconId)
+    private void DrawIcon(uint iconId, bool dimmed = false)
     {
         var size = new Vector2(IconSize);
         if (_textures.TryGetFromGameIcon(new GameIconLookup(iconId), out var tex)
             && tex.TryGetWrap(out var wrap, out _))
+        {
+            // Dim (but keep clickable) the accessory icons a set-apply will skip
+            // while "Include accessories" is off. Alpha multiplies the image tint,
+            // so the icon greys out; hit-testing is unaffected.
+            if (dimmed) ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.3f);
             ImGui.Image(wrap.Handle, size);
+            if (dimmed) ImGui.PopStyleVar();
+        }
         else
             ImGui.Dummy(size);
     }
@@ -161,7 +189,7 @@ public sealed class MainWindow : Window, IDisposable
     private void DoApplySet(OutfitSet set)
     {
         // objectIndex 0 == the local player. "Always self", per the design.
-        var (applied, failed) = _outfits.Apply(set, _glam, objectIndex: 0);
+        var (applied, failed) = _outfits.Apply(set, _glam, objectIndex: 0, _config.IncludeAccessories);
 
         if (failed == 0)
         {
