@@ -1,8 +1,9 @@
 # HOutfits
 
-Apply a complete FFXIV outfit set to **yourself** in one click, routed through
+Apply a complete FFXIV player character outfits or NPC appearances and gear set to **yourself** in one click, routed through
 [Glamourer](https://github.com/Ottermandias/Glamourer) — instead of selecting
-each piece from Glamourer's dropdown: HOutfits applies the set through Glamourer.
+each piece from Glamourer's dropdown: HOutfits applies the set through Glamourer. 
+Will write NPC names to your name plate on toggle if HMoniker is installed.
 
 Open with `/houtfits`, filter, and:
 
