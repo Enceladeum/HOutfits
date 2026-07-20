@@ -19,13 +19,26 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly WindowSystem _windows = new("HOutfits");
     private readonly MainWindow _main;
+    private readonly NpcService _npcs;
+    private readonly SlotIconService _slotIcons;
 
     public Plugin()
     {
         var config   = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         var glam     = new GlamourerIpc(PluginInterface);
+        var moniker  = new MonikerIpc(PluginInterface);
         var outfits  = new OutfitService(DataManager, Log);
-        _main        = new MainWindow(outfits, glam, TextureProvider, Log, config);
+        var bnpcNames = new BNpcNameData(Log);
+        var npcs     = new NpcService(DataManager, Log, bnpcNames);
+        var npcState = new NpcStateBuilder(glam, Log);
+        _slotIcons   = new SlotIconService(Log);
+        _main        = new MainWindow(outfits, npcs, npcState, glam, moniker, TextureProvider, _slotIcons, Log, config);
+        _npcs        = npcs;
+
+        // Kick the BNpc name fetch. When it finishes, drop the NPC cache so battle
+        // NPCs populate without a restart (they need the fetched name mapping).
+        bnpcNames.OnRefreshed += () => _npcs.Invalidate();
+        bnpcNames.Load();
 
         _windows.AddWindow(_main);
 
@@ -47,6 +60,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= OpenMain;
         _windows.RemoveAllWindows();
         _main.Dispose();
+        _slotIcons.Dispose();
     }
 
     private void OnCommand(string _, string __) => OpenMain();

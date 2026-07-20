@@ -20,4 +20,17 @@ public sealed class Configuration : IPluginConfiguration
     /// individual accessory icon still applies that one piece regardless.
     /// </summary>
     public bool IncludeAccessories { get; set; } = true;
+
+    /// <summary>
+    /// NPC tab: which regions of an NPC to apply. 0 = both (appearance + gear),
+    /// 1 = appearance only (face/body), 2 = gear only. Mirrors Glamourer's NPC
+    /// panel options.
+    /// </summary>
+    public int NpcApplyMode { get; set; } = 0;
+
+    /// <summary>
+    /// NPC tab: when true and Moniker is installed, applying an NPC also pushes
+    /// the NPC's name to the local nameplate via Moniker.
+    /// </summary>
+    public bool NpcApplyName { get; set; } = false;
 }

@@ -3,6 +3,7 @@ using Dalamud.Plugin.Services;
 using Glamourer.Api.Enums;
 using Glamourer.Api.Helpers;
 using Glamourer.Api.IpcSubscribers;
+using Newtonsoft.Json.Linq;
 
 namespace HOutfits;
 
@@ -29,12 +30,16 @@ public sealed class GlamourerIpc
     private readonly ApiVersion _apiVersion;
     private readonly SetItem _setItem;
     private readonly RevertState _revert;
+    private readonly Glamourer.Api.IpcSubscribers.GetState _getState;
+    private readonly Glamourer.Api.IpcSubscribers.ApplyState _applyState;
 
     public GlamourerIpc(IDalamudPluginInterface pi)
     {
         _apiVersion = new ApiVersion(pi);
         _setItem    = new SetItem(pi);
         _revert     = new RevertState(pi);
+        _getState   = new Glamourer.Api.IpcSubscribers.GetState(pi);
+        _applyState = new Glamourer.Api.IpcSubscribers.ApplyState(pi);
     }
 
     /// <summary>
@@ -79,4 +84,32 @@ public sealed class GlamourerIpc
     /// </summary>
     public GlamourerApiEc Revert(int objectIndex)
         => _revert.Invoke(objectIndex, key: 0, flags: ApplyFlagEx.RevertDefault);
+
+    /// <summary>
+    /// Read an actor's full Glamourer state as a JObject (customize + equipment +
+    /// meta). Returns null if the call didn't succeed. Used by the NPC-appearance
+    /// builder to learn Glamourer's real state format from a known-good sample
+    /// rather than reconstructing it blind.
+    /// </summary>
+    public JObject? GetState(int objectIndex)
+    {
+        try
+        {
+            var (ec, json) = _getState.Invoke(objectIndex);
+            return ec == GlamourerApiEc.Success ? json : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Apply a full Glamourer state JObject to an actor. This is the only path
+    /// that can paint customize (face/body) — the API has no per-customize setter.
+    /// Flags select which regions of the state apply (Equipment, Customization,
+    /// or both via RevertDefault/StateDefault).
+    /// </summary>
+    public GlamourerApiEc ApplyState(JObject state, int objectIndex, ApplyFlag flags)
+        => _applyState.Invoke(state, objectIndex, key: 0, flags: flags);
 }
