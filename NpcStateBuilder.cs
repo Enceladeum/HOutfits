@@ -21,10 +21,12 @@ namespace HOutfits;
 /// encode an NPC model/variant appearance (that's how its own NPC tab paints
 /// "9161-1"). We set the slot's ItemId from the NPC's packed model value.
 ///
-/// Customize: the state's Customize block is per-field { "Value", "Apply" }. We
-/// overwrite each field's Value from the NPC's 26-byte customize array, using the
-/// index order verified against Glamourer's FromEnpcBase. We set Apply=true only
-/// on the fields we write (and only in the "appearance" apply modes).
+/// Customize: the state's Customize block is per-field { "Value", "Apply" },
+/// keyed per CustomizeIndex (36 options): NOT one key per byte of the 26-byte
+/// customize array. Several bytes pack multiple options behind bit masks, so each
+/// key's value is `customizeByte &amp; mask` (masked, not shifted), per Penumbra's
+/// CustomizeArray.Get. See CustomizeMap. We set Apply=true on the fields we write
+/// (and only in the "appearance" apply modes).
 /// </summary>
 public sealed class NpcStateBuilder
 {
@@ -53,39 +55,61 @@ public sealed class NpcStateBuilder
         [ApiEquipSlot.LFinger] = "LFinger",
     };
 
-    // Customize array index -> the Glamourer Customize JObject key. Order verified
-    // against Glamourer's FromEnpcBase (indices 0..25). Keys are Glamourer's
-    // CustomizeIndex names as they appear in the GetState dump. A key not present
-    // in the live state is simply skipped (its NPC value is not written, template
-    // value stays) — no crash.
-    private static readonly string[] CustomizeKey =
+    // Glamourer Customize JObject key -> (byte index in the 26-byte customize
+    // array, bit mask within that byte).
+    //
+    // IMPORTANT: the Customize block is keyed per CustomizeIndex (36 options), NOT
+    // per byte (26). Five bytes pack several options behind bit masks: byte 7
+    // (Highlights), byte 12 (the seven FacialFeatures + LegacyTattoo), byte 16
+    // (EyeShape + SmallIris), byte 19 (Mouth + Lipstick) and byte 24 (FacePaint +
+    // FacePaintReversed). Writing a whole byte into one of those keys pushes an
+    // out-of-range value at it (e.g. EyeShape is masked 0x7F, so a byte with the
+    // high bit set exceeds it and the eye shape silently fails to apply), and
+    // leaves the co-resident options never written at all.
+    //
+    // Values are masked but NOT shifted down, matching Penumbra's
+    // CustomizeArray.Get: `Data[offset] & mask`. So SmallIris is 0 or 128,
+    // FacialFeature2 is 0 or 2, etc.
+    //
+    // Table copied verbatim from Penumbra.GameData CustomizeIndex.ToByteAndMask.
+    private static readonly (string Key, int Byte, byte Mask)[] CustomizeMap =
     {
-        "Race",            // 0
-        "Gender",          // 1
-        "BodyType",        // 2
-        "Height",          // 3
-        "Clan",            // 4  (ENpcBase Tribe)
-        "Face",            // 5
-        "Hairstyle",       // 6
-        "Highlights",      // 7
-        "SkinColor",       // 8
-        "EyeColorRight",   // 9  (heterochromia)
-        "HairColor",       // 10
-        "HighlightsColor", // 11
-        "FacialFeature1",  // 12
-        "TattooColor",     // 13
-        "Eyebrows",        // 14
-        "EyeColorLeft",    // 15
-        "EyeShape",        // 16
-        "Nose",            // 17
-        "Jaw",             // 18
-        "Mouth",           // 19
-        "LipColor",        // 20
-        "MuscleMass",      // 21 (BustOrTone1)
-        "TailShape",       // 22 (ExtraFeature1)
-        "BustSize",        // 23 (ExtraFeature2OrBust)
-        "FacePaint",       // 24
-        "FacePaintColor",  // 25
+        ("Race",              0,  0xFF),
+        ("Gender",            1,  0xFF),
+        ("BodyType",          2,  0xFF),
+        ("Height",            3,  0xFF),
+        ("Clan",              4,  0xFF),
+        ("Face",              5,  0xFF),
+        ("Hairstyle",         6,  0xFF),
+        ("Highlights",        7,  0x80),
+        ("SkinColor",         8,  0xFF),
+        ("EyeColorRight",     9,  0xFF),
+        ("HairColor",         10, 0xFF),
+        ("HighlightsColor",   11, 0xFF),
+        ("FacialFeature1",    12, 0x01),
+        ("FacialFeature2",    12, 0x02),
+        ("FacialFeature3",    12, 0x04),
+        ("FacialFeature4",    12, 0x08),
+        ("FacialFeature5",    12, 0x10),
+        ("FacialFeature6",    12, 0x20),
+        ("FacialFeature7",    12, 0x40),
+        ("LegacyTattoo",      12, 0x80),
+        ("TattooColor",       13, 0xFF),
+        ("Eyebrows",          14, 0xFF),
+        ("EyeColorLeft",      15, 0xFF),
+        ("EyeShape",          16, 0x7F),
+        ("SmallIris",         16, 0x80),
+        ("Nose",              17, 0xFF),
+        ("Jaw",               18, 0xFF),
+        ("Mouth",             19, 0x7F),
+        ("Lipstick",          19, 0x80),
+        ("LipColor",          20, 0xFF),
+        ("MuscleMass",        21, 0xFF),
+        ("TailShape",         22, 0xFF),
+        ("BustSize",          23, 0xFF),
+        ("FacePaint",         24, 0x7F),
+        ("FacePaintReversed", 24, 0x80),
+        ("FacePaintColor",    25, 0xFF),
     };
 
     public enum Mode { Both, AppearanceOnly, GearOnly }
@@ -195,14 +219,16 @@ public sealed class NpcStateBuilder
     private static void WriteCustomize(JObject cust, NpcEntry npc)
     {
         var c = npc.Customize;
-        for (var i = 0; i < CustomizeKey.Length && i < c.Length; i++)
+        foreach (var (key, byteIdx, mask) in CustomizeMap)
         {
-            var key = CustomizeKey[i];
-            if (cust[key] is JObject field)
-            {
-                field["Value"] = c[i];
-                field["Apply"] = true;
-            }
+            if (byteIdx >= c.Length)
+                continue;
+            if (cust[key] is not JObject field)
+                continue; // key absent from this state (e.g. non-human): leave it
+
+            // Masked, not shifted: matches Penumbra's CustomizeArray.Get.
+            field["Value"] = (byte)(c[byteIdx] & mask);
+            field["Apply"] = true;
         }
     }
 }
