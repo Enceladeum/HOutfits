@@ -16,9 +16,10 @@ namespace HOutfits;
 ///  - NPCs: named human NPCs, applied via Glamourer ApplyState (their gear has
 ///    no item id, so it's whole-state application, not SetItem).
 ///
-/// Both tabs share the "Include accessories" toggle and the "Revert changes"
-/// button. Draw callbacks stay side-effect-light: clicks queue work that fires
-/// at the top of Draw next frame.
+/// Both tabs carry their own "Include accessories" toggle (bound to the same
+/// setting, shown in-context beside each tab's other options) and share the
+/// "Revert changes" button in the header. Draw callbacks stay side-effect-light:
+/// clicks queue work that fires at the top of Draw next frame.
 /// </summary>
 public sealed class MainWindow : Window, IDisposable
 {
@@ -114,18 +115,6 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawSharedHeader()
     {
-        var includeAccessories = _config.IncludeAccessories;
-        if (ImGui.Checkbox("Include accessories", ref includeAccessories))
-        {
-            _config.IncludeAccessories = includeAccessories;
-            Plugin.PluginInterface.SavePluginConfig(_config);
-        }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "When off, applying a whole set or NPC skips earrings, necklace, bracelets, and rings.\n" +
-                "Click an individual accessory to apply just that piece regardless.");
-
-        ImGui.SameLine();
         if (ImGui.Button("Revert changes"))
             _pendingRevert = true;
         if (ImGui.IsItemHovered())
@@ -137,8 +126,30 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.Separator();
     }
 
+    /// <summary>
+    /// The "Include accessories" toggle, drawn in-context by each tab. Both tabs
+    /// bind the same <see cref="Configuration.IncludeAccessories"/> setting, so
+    /// flipping it on one tab is reflected on the other. The caller decides
+    /// layout (e.g. calls <c>ImGui.SameLine()</c> first).
+    /// </summary>
+    private void DrawIncludeAccessoriesCheckbox()
+    {
+        var includeAccessories = _config.IncludeAccessories;
+        if (ImGui.Checkbox("Include accessories", ref includeAccessories))
+        {
+            _config.IncludeAccessories = includeAccessories;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "When off, applying a whole set or NPC skips earrings, necklace, bracelets, and rings.\n" +
+                "Click an individual accessory to apply just that piece regardless.");
+    }
+
     private void DrawSetsTab()
     {
+        DrawIncludeAccessoriesCheckbox();
+
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("###setfilter", "Filter by set or item name (e.g. \"ushanka\")", ref _setFilter, 128);
 
@@ -205,10 +216,11 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.RadioButton("Gear", ref mode, 2)) SaveMode(mode);
 
-        // Apply-name toggle — always visible. Enabled when Moniker (HMoniker
+        // Options row: apply-name, include-weapons, and include-accessories sit
+        // together on one line below the mode radios.
+        // Apply-name toggle: always visible. Enabled when Moniker (HMoniker
         // v2.1+) is detected; disabled with an explanation otherwise, so it's
         // never ambiguous whether the feature is missing or just off.
-        ImGui.SameLine();
         var monikerAvailable = _moniker.Available;
         if (!monikerAvailable)
             ImGui.BeginDisabled();
@@ -232,6 +244,24 @@ public sealed class MainWindow : Window, IDisposable
                     "Requires the Moniker (HMoniker) plugin, v2.1 or newer, to be installed and enabled.\n" +
                     "If you have it and this is still disabled, its IPC version may be older than 2.1.");
         }
+
+        // Weapons are opt-in: they're written as custom-model appearances and
+        // Glamourer can reject a weapon that isn't valid for your current class.
+        ImGui.SameLine();
+        var includeWeapons = _config.NpcIncludeWeapons;
+        if (ImGui.Checkbox("Include weapons", ref includeWeapons))
+        {
+            _config.NpcIncludeWeapons = includeWeapons;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Experimental. When applying a whole NPC, also copy its main-hand and off-hand weapons.\n" +
+                "Glamourer may ignore a weapon that isn't valid for your current class, so this can do\n" +
+                "nothing for some weapons. Clicking a single weapon icon always applies regardless.");
+
+        ImGui.SameLine();
+        DrawIncludeAccessoriesCheckbox();
 
         ImGui.SetNextItemWidth(-1);
         ImGui.InputTextWithHint("###npcfilter", "Filter by NPC, race, or clan name", ref _npcFilter, 128);
@@ -291,7 +321,8 @@ public sealed class MainWindow : Window, IDisposable
                 var pieceIdx = 0;
                 foreach (var piece in npc.Pieces)
                 {
-                    var dimmed = !_config.IncludeAccessories && OutfitService.IsAccessory(piece.Slot);
+                    var dimmed = (!_config.IncludeAccessories && OutfitService.IsAccessory(piece.Slot))
+                               || (!_config.NpcIncludeWeapons && NpcStateBuilder.IsWeapon(piece.Slot));
                     if (dimmed) ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.3f);
 
                     // Generic slot placeholder icon (Glamourer-style silhouette).
@@ -364,6 +395,8 @@ public sealed class MainWindow : Window, IDisposable
         ApiEquipSlot.Wrists => "Wrist",
         ApiEquipSlot.RFinger => "R.Ring",
         ApiEquipSlot.LFinger => "L.Ring",
+        ApiEquipSlot.MainHand => "M.Hand",
+        ApiEquipSlot.OffHand => "O.Hand",
         _ => slot.ToString(),
     };
 
@@ -406,7 +439,7 @@ public sealed class MainWindow : Window, IDisposable
             _ => NpcStateBuilder.Mode.Both,
         };
 
-        var ec = _npcState.Apply(npc, mode, _config.IncludeAccessories);
+        var ec = _npcState.Apply(npc, mode, _config.IncludeAccessories, _config.NpcIncludeWeapons);
         var ok = ec == Glamourer.Api.Enums.GlamourerApiEc.Success;
 
         var namePart = "";

@@ -7,6 +7,12 @@ x64/
 x86/
 [Oo]ut/
 
+## Distributable release zips live in the FFXIV master dist/ folder (outside
+## this repo); this repo never tracks them. GitHub Releases (built by CI on a
+## v* tag) hold the canonical copy; the *.zip catch-all also stops any stray
+## zip from cluttering the repo root.
+*.zip
+
 ## IDE / editor
 .vs/
 .vscode/

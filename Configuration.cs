@@ -33,4 +33,14 @@ public sealed class Configuration : IPluginConfiguration
     /// the NPC's name to the local nameplate via Moniker.
     /// </summary>
     public bool NpcApplyName { get; set; } = false;
+
+    /// <summary>
+    /// NPC tab: when true, applying a WHOLE NPC also copies its main-hand and
+    /// off-hand weapons. Opt-in and experimental: weapons are written as
+    /// custom-model appearances, and Glamourer can refuse a weapon whose type
+    /// doesn't match your current class, so it may silently do nothing for some
+    /// weapons. Off by default. Clicking an individual weapon icon still applies
+    /// that one piece regardless of this setting.
+    /// </summary>
+    public bool NpcIncludeWeapons { get; set; } = false;
 }

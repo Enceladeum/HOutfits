@@ -26,10 +26,16 @@ public sealed record NpcEntry(
 /// One NPC gear slot as APPEARANCE (model + variant + dyes), not an item id —
 /// this is what Glamourer shows as "9161-1". Pieces use generic placeholders in
 /// the UI (NPC gear often has no obtainable item / icon).
+///
+/// <see cref="Secondary"/> is the secondary model id: it is 0 for armor (whose
+/// model is a 2-part model+variant), and carries the weapon "Type" (the b-number)
+/// for MainHand/OffHand, whose model is a 3-part Set/Type/Variant. This mirrors
+/// Penumbra's CustomItemId, where the secondary id occupies bits 16-31.
 /// </summary>
 public sealed record NpcPiece(
     ApiEquipSlot Slot,
     ushort Model,
+    ushort Secondary,
     byte Variant,
     byte Dye,
     byte Dye2,
@@ -129,8 +135,8 @@ public sealed class NpcService
         {
             var pa = a.Pieces[i];
             var pb = b.Pieces[i];
-            if (pa.Slot != pb.Slot || pa.Model != pb.Model || pa.Variant != pb.Variant
-                || pa.Dye != pb.Dye || pa.Dye2 != pb.Dye2)
+            if (pa.Slot != pb.Slot || pa.Model != pb.Model || pa.Secondary != pb.Secondary
+                || pa.Variant != pb.Variant || pa.Dye != pb.Dye || pa.Dye2 != pb.Dye2)
                 return false;
         }
         return true;
@@ -332,6 +338,8 @@ public sealed class NpcService
         AddEquip(p, ApiEquipSlot.Wrists,  r.ModelWrists,    r.DyeWrists.RowId,    r.Dye2Wrists.RowId);
         AddEquip(p, ApiEquipSlot.RFinger, r.ModelRightRing, r.DyeRightRing.RowId, r.Dye2RightRing.RowId);
         AddEquip(p, ApiEquipSlot.LFinger, r.ModelLeftRing,  r.DyeLeftRing.RowId,  r.Dye2LeftRing.RowId);
+        AddWeapon(p, ApiEquipSlot.MainHand, r.ModelMainHand, r.DyeMainHand.RowId, r.Dye2MainHand.RowId);
+        AddWeapon(p, ApiEquipSlot.OffHand,  r.ModelOffHand,  r.DyeOffHand.RowId,  r.Dye2OffHand.RowId);
         return p;
     }
 
@@ -348,6 +356,8 @@ public sealed class NpcService
         AddEquip(p, ApiEquipSlot.Wrists,  r.ModelWrists,    r.DyeWrists.RowId,    r.Dye2Wrists.RowId);
         AddEquip(p, ApiEquipSlot.RFinger, r.ModelRightRing, r.DyeRightRing.RowId, r.Dye2RightRing.RowId);
         AddEquip(p, ApiEquipSlot.LFinger, r.ModelLeftRing,  r.DyeLeftRing.RowId,  r.Dye2LeftRing.RowId);
+        AddWeapon(p, ApiEquipSlot.MainHand, r.ModelMainHand, r.DyeMainHand.RowId, r.Dye2MainHand.RowId);
+        AddWeapon(p, ApiEquipSlot.OffHand,  r.ModelOffHand,  r.DyeOffHand.RowId,  r.Dye2OffHand.RowId);
         return p;
     }
 
@@ -357,7 +367,26 @@ public sealed class NpcService
             return; // empty slot ("Nothing")
         var model   = (ushort)(modelValue & 0xFFFF);
         var variant = (byte)((modelValue >> 16) & 0xFF);
-        pieces.Add(new NpcPiece(slot, model, variant, (byte)dye, (byte)dye2, $"{model}-{variant}"));
+        // Armor has no secondary model id (Secondary = 0).
+        pieces.Add(new NpcPiece(slot, model, 0, variant, (byte)dye, (byte)dye2, $"{model}-{variant}"));
+    }
+
+    // Weapons pack a 3-part model — Set / Type / Variant — in a 64-bit column,
+    // unlike armor's 2-part model+variant. Set -> primary model, Type ->
+    // secondary model, Variant -> variant. Dyes come from the separate Dye
+    // columns (the model column's own stain bytes are ignored, exactly as armor
+    // is read). This is the same decomposition Brio uses when it copies an NPC's
+    // ModelMainHand into a WeaponModelId (Id=Set, Type=Type, Variant=Variant).
+    private static void AddWeapon(List<NpcPiece> pieces, ApiEquipSlot slot, ulong modelValue, uint dye, uint dye2)
+    {
+        if (modelValue == 0)
+            return; // no weapon in this slot
+        var set = (ushort)(modelValue & 0xFFFF);
+        if (set == 0)
+            return;
+        var type    = (ushort)((modelValue >> 16) & 0xFFFF);
+        var variant = (byte)((modelValue >> 32) & 0xFF);
+        pieces.Add(new NpcPiece(slot, set, type, variant, (byte)dye, (byte)dye2, $"{set}-{type}-{variant}"));
     }
 
     public static bool IsAccessory(ApiEquipSlot slot) => OutfitService.IsAccessory(slot);

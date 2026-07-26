@@ -53,6 +53,11 @@ public sealed class NpcStateBuilder
         [ApiEquipSlot.Wrists]  = "Wrists",
         [ApiEquipSlot.RFinger] = "RFinger",
         [ApiEquipSlot.LFinger] = "LFinger",
+        // Weapons sit in the SAME Equipment object under these keys, with the
+        // exact per-slot schema armor uses (ItemId/Apply/Stain/Stain2/ApplyStain),
+        // so SetSlot handles them unchanged.
+        [ApiEquipSlot.MainHand] = "MainHand",
+        [ApiEquipSlot.OffHand]  = "OffHand",
     };
 
     // Glamourer Customize JObject key -> (byte index in the 26-byte customize
@@ -117,8 +122,14 @@ public sealed class NpcStateBuilder
     /// <summary>
     /// Apply an NPC to the local player. Returns the Glamourer result code, or
     /// null if the local state couldn't be read.
+    ///
+    /// <paramref name="includeWeapons"/> is opt-in and experimental: NPC weapons
+    /// are written as custom-model CustomItemIds in the MainHand/OffHand slots.
+    /// Glamourer may refuse a weapon whose type doesn't match the player's class,
+    /// so this can be a no-op for some weapons even when everything is encoded
+    /// correctly. Left off by default.
     /// </summary>
-    public GlamourerApiEc? Apply(NpcEntry npc, Mode mode, bool includeAccessories)
+    public GlamourerApiEc? Apply(NpcEntry npc, Mode mode, bool includeAccessories, bool includeWeapons)
     {
         var state = _glam.GetState(0);
         if (state is null)
@@ -131,7 +142,11 @@ public sealed class NpcStateBuilder
         var doAppearance = mode is Mode.Both or Mode.AppearanceOnly;
 
         if (doGear && state["Equipment"] is JObject equip)
-            WriteEquipment(equip, npc, includeAccessories);
+        {
+            WriteEquipment(equip, npc, includeAccessories, includeWeapons);
+            if (includeWeapons)
+                LogWeapons(npc);
+        }
 
         if (doAppearance && state["Customize"] is JObject cust)
             WriteCustomize(cust, npc);
@@ -157,16 +172,25 @@ public sealed class NpcStateBuilder
             && equip[key] is JObject slot)
         {
             SetSlot(slot, piece);
+            if (IsWeapon(piece.Slot))
+                _log.Information("NPC weapon piece {Slot} -> CustomItemId={Id} (FullEquipType={Fet}).",
+                    piece.Slot, CustomItemId(piece), EquipTypeFor(piece.Slot));
         }
 
         return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
     }
 
-    private static void WriteEquipment(JObject equip, NpcEntry npc, bool includeAccessories)
+    /// <summary>The two weapon (hand) slots. Mirrored by MainWindow's dimming logic.</summary>
+    public static bool IsWeapon(ApiEquipSlot slot)
+        => slot is ApiEquipSlot.MainHand or ApiEquipSlot.OffHand;
+
+    private static void WriteEquipment(JObject equip, NpcEntry npc, bool includeAccessories, bool includeWeapons)
     {
         foreach (var piece in npc.Pieces)
         {
             if (!includeAccessories && OutfitService.IsAccessory(piece.Slot))
+                continue;
+            if (!includeWeapons && IsWeapon(piece.Slot))
                 continue;
             if (!SlotKey.TryGetValue(piece.Slot, out var key) || equip[key] is not JObject slot)
                 continue;
@@ -174,32 +198,67 @@ public sealed class NpcStateBuilder
         }
     }
 
-    // FullEquipType values (from Penumbra.GameData): Unknown=0, Head=1, Body=2,
-    // Hands=3, Legs=4, Feet=5, Ears=6, Neck=7, Wrists=8, Finger=9. Rings share
-    // Finger.
+    // Diagnostic for the experimental weapon path: log the exact CustomItemId we
+    // hand Glamourer for each weapon slot, so an in-game test can confirm the
+    // value it receives (and, if a weapon doesn't apply, whether it was even
+    // written). Information level while the path is unverified; demote to Debug
+    // once weapon apply is confirmed working.
+    private void LogWeapons(NpcEntry npc)
+    {
+        foreach (var piece in npc.Pieces)
+        {
+            if (!IsWeapon(piece.Slot))
+                continue;
+            _log.Information(
+                "NPC weapon {Slot}: Set={Set} Type={Type} Variant={Variant} Dye={Dye}/{Dye2} -> CustomItemId={Id} (FullEquipType={Fet}).",
+                piece.Slot, piece.Model, piece.Secondary, piece.Variant, piece.Dye, piece.Dye2,
+                CustomItemId(piece), EquipTypeFor(piece.Slot));
+        }
+    }
+
+    // FullEquipType values, verified verbatim against the LIVE Glamourer's own
+    // Penumbra.GameData (its FullEquipType enum + FullEquipTypeExtensions.ToSlot):
+    // Unknown=0, Head=1, Body=2, Hands=3, Legs=4, Feet=5, Ears=6, Neck=7,
+    // Wrists=8, Finger=9 (both rings share Finger).
+    //
+    // Weapons: the SPECIFIC category (Sword=12, Bow=14, Gun=23, ...) is derived
+    // from a weapon's item / equip-category data, which NPC sheet gear does not
+    // carry — so we genuinely cannot know it. Penumbra ships two sentinels for
+    // exactly this case: UnknownMainhand=66 and UnknownOffhand=67. Its own
+    // ToSlot() maps them to MainHand/OffHand (and UnknownMainhand.IsWeapon() is
+    // true), so a CustomItemId stamped with them routes to the correct hand and
+    // the model loads from Set/Type/Variant (bits 0-39) — the mesh does NOT
+    // depend on the category byte. Using 0/Unknown here would make ToSlot()
+    // return EquipSlot.Unknown and the weapon would silently route nowhere
+    // (verified by decompiling ToSlot's default arm).
     private static ulong EquipTypeFor(ApiEquipSlot slot) => slot switch
     {
-        ApiEquipSlot.Head    => 1,
-        ApiEquipSlot.Body    => 2,
-        ApiEquipSlot.Hands   => 3,
-        ApiEquipSlot.Legs    => 4,
-        ApiEquipSlot.Feet    => 5,
-        ApiEquipSlot.Ears    => 6,
-        ApiEquipSlot.Neck    => 7,
-        ApiEquipSlot.Wrists  => 8,
-        ApiEquipSlot.RFinger => 9,
-        ApiEquipSlot.LFinger => 9,
-        _                    => 0,
+        ApiEquipSlot.Head     => 1,
+        ApiEquipSlot.Body     => 2,
+        ApiEquipSlot.Hands    => 3,
+        ApiEquipSlot.Legs     => 4,
+        ApiEquipSlot.Feet     => 5,
+        ApiEquipSlot.Ears     => 6,
+        ApiEquipSlot.Neck     => 7,
+        ApiEquipSlot.Wrists   => 8,
+        ApiEquipSlot.RFinger  => 9,
+        ApiEquipSlot.LFinger  => 9,
+        ApiEquipSlot.MainHand => 66, // FullEquipType.UnknownMainhand
+        ApiEquipSlot.OffHand  => 67, // FullEquipType.UnknownOffhand
+        _                     => 0,
     };
 
     private const ulong CustomFlag = 1ul << 48;
 
     // Build the CustomItemId Glamourer stores for NPC (non-item) gear. Encoding
-    // copied verbatim from Penumbra.GameData CustomItemId(model, secondary,
-    // variant, type): model | (secondary<<16) | (variant<<32) | (type<<40) |
-    // CustomFlag. Armor has secondary = 0.
+    // verified verbatim against the live Glamourer's Penumbra.GameData
+    // CustomItemId(model, secondary, variant, type) constructor:
+    //   model | (secondary<<16) | (variant<<32) | (type<<40) | CustomFlag.
+    // Armor sets secondary = 0, so this stays byte-identical to the armor-only
+    // build; weapons carry the model "Type" in secondary.
     private static ulong CustomItemId(NpcPiece piece)
         => piece.Model
+         | ((ulong)piece.Secondary << 16)
          | ((ulong)piece.Variant << 32)
          | (EquipTypeFor(piece.Slot) << 40)
          | CustomFlag;
