@@ -11,21 +11,25 @@ using Glamourer.Api.Enums;
 namespace HOutfits;
 
 /// <summary>
-/// The plugin window. Two tabs:
-///  - Outfit sets: the game's named sets, applied via Glamourer SetItem.
+/// The plugin window. Three tabs:
+///  - Outfit sets: the game's named sets, plus (optionally) sets recovered from
+///    item names, applied via Glamourer SetItem.
+///  - Loose gear: wearable pieces that belong to no set at all, browsed by slot
+///    as an icon grid with a large preview on hover, applied via Glamourer SetItem.
 ///  - NPCs: named human NPCs, applied via Glamourer ApplyState (their gear has
 ///    no item id, so it's whole-state application, not SetItem).
 ///
-/// Both tabs carry their own "Include accessories" toggle (bound to the same
-/// setting, shown in-context beside each tab's other options) and share the
-/// "Revert changes" button in the header. Draw callbacks stay side-effect-light:
-/// clicks queue work that fires at the top of Draw next frame.
+/// The set-based tabs carry their own "Include accessories" toggle (bound to the
+/// same setting, shown in-context beside each tab's other options) and all tabs
+/// share the "Revert changes" button in the header. Draw callbacks stay
+/// side-effect-light: clicks queue work that fires at the top of Draw next frame.
 /// </summary>
 public sealed class MainWindow : Window, IDisposable
 {
     private const float IconSize = 32f;
 
     private readonly OutfitService _outfits;
+    private readonly GearService _gear;
     private readonly NpcService _npcs;
     private readonly NpcStateBuilder _npcState;
     private readonly GlamourerIpc _glam;
@@ -40,6 +44,15 @@ public sealed class MainWindow : Window, IDisposable
     private OutfitSet? _pendingSet;
     private OutfitPiece? _pendingPiece;
 
+    // The game's sets merged with the name-grouped ones, rebuilt only when either list (or the toggle) changes.
+    private IReadOnlyList<OutfitSet>? _mergedSets;
+    private IReadOnlyList<OutfitSet>? _mergedFromOfficial;
+    private IReadOnlyList<OutfitSet>? _mergedFromGrouped;
+
+    // Loose gear tab state
+    private string _looseFilter = string.Empty;
+    private GearItem? _pendingLoose;
+
     // NPC tab state
     private string _npcFilter = string.Empty;
     private NpcEntry? _pendingNpc;
@@ -51,12 +64,13 @@ public sealed class MainWindow : Window, IDisposable
     private string _status = string.Empty;
     private Vector4 _statusColor = new(0.7f, 0.7f, 0.7f, 1f);
 
-    public MainWindow(OutfitService outfits, NpcService npcs, NpcStateBuilder npcState,
+    public MainWindow(OutfitService outfits, GearService gear, NpcService npcs, NpcStateBuilder npcState,
         GlamourerIpc glam, MonikerIpc moniker, ITextureProvider textures, SlotIconService slotIcons,
         IPluginLog log, Configuration config)
         : base("HOutfits###HOutfitsMain")
     {
         _outfits   = outfits;
+        _gear      = gear;
         _npcs      = npcs;
         _npcState  = npcState;
         _glam      = glam;
@@ -86,6 +100,9 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
+        // The first time the window draws, start the one-off background scan for name-grouped sets and loose gear.
+        _gear.EnsureBuilt();
+
         DrawSharedHeader();
 
         if (!ImGui.BeginTabBar("###hotabs"))
@@ -94,6 +111,11 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.BeginTabItem("Outfit sets"))
         {
             DrawSetsTab();
+            ImGui.EndTabItem();
+        }
+        if (ImGui.BeginTabItem("Loose gear"))
+        {
+            DrawLooseTab();
             ImGui.EndTabItem();
         }
         if (ImGui.BeginTabItem("NPCs"))
@@ -108,6 +130,7 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (_pendingSet is { } ps)          { _pendingSet = null;       DoApplySet(ps); }
         if (_pendingPiece is { } pp)        { _pendingPiece = null;     DoApplyPiece(pp); }
+        if (_pendingLoose is { } pl)        { _pendingLoose = null;     DoApplyLoose(pl); }
         if (_pendingNpc is { } pn)          { _pendingNpc = null;       DoApplyNpc(pn); }
         if (_pendingNpcPiece is { } pnp)    { _pendingNpcPiece = null;  DoApplyNpcPiece(pnp.npc, pnp.piece); }
         if (_pendingRevert)                 { _pendingRevert = false;   DoRevert(); }
@@ -146,12 +169,73 @@ public sealed class MainWindow : Window, IDisposable
                 "Click an individual accessory to apply just that piece regardless.");
     }
 
+    /// <summary>
+    /// The game's own sets plus, when enabled and ready, the sets recovered by name. Merged once and cached until either
+    /// list (or the toggle) changes; sorted with the same comparer the game's list already uses so its order is unchanged.
+    /// </summary>
+    private IReadOnlyList<OutfitSet> AllSets()
+    {
+        var official = _outfits.Sets;
+        var grouped  = _config.IncludeGroupedSets ? _gear.Data?.GroupedSets : null;
+        if (grouped is null || grouped.Count == 0)
+            return official;
+
+        if (!ReferenceEquals(_mergedFromOfficial, official) || !ReferenceEquals(_mergedFromGrouped, grouped))
+        {
+            _mergedSets         = official.Concat(grouped).OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
+            _mergedFromOfficial = official;
+            _mergedFromGrouped  = grouped;
+        }
+        return _mergedSets!;
+    }
+
+    /// <summary>
+    /// A search field with a small [x] at its right edge that clears it. The button stays in place (dimmed) while the
+    /// field is empty, so the layout never jumps as you type.
+    /// </summary>
+    private static void DrawFilterBox(string id, string hint, ref string text)
+    {
+        var button = ImGui.GetFrameHeight();                       // a square, as tall as the field
+        ImGui.SetNextItemWidth(-(button + ImGui.GetStyle().ItemSpacing.X));
+        ImGui.InputTextWithHint(id, hint, ref text, 128);
+
+        ImGui.SameLine();
+        var empty = text.Length == 0;
+        if (empty)
+            ImGui.BeginDisabled();
+        if (ImGui.Button($"x###{id.TrimStart('#')}_clear", new Vector2(button, button)))
+            text = string.Empty;
+        if (empty)
+            ImGui.EndDisabled();
+        else if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Clear the search");
+    }
+
+    private void DrawIncludeGroupedSetsCheckbox()
+    {
+        var includeGrouped = _config.IncludeGroupedSets;
+        if (ImGui.Checkbox("Include name-grouped sets", ref includeGrouped))
+        {
+            _config.IncludeGroupedSets = includeGrouped;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Also list sets the game doesn't name, found by matching item names\n" +
+                "(e.g. \"Allagan of Striking\"). Turn off to see only the game's own sets.\n" +
+                "They're grouped by name, so the odd one can be imperfect.");
+    }
+
     private void DrawSetsTab()
     {
         DrawIncludeAccessoriesCheckbox();
+        ImGui.SameLine();
+        DrawIncludeGroupedSetsCheckbox();
 
-        ImGui.SetNextItemWidth(-1);
-        ImGui.InputTextWithHint("###setfilter", "Filter by set or item name (e.g. \"ushanka\")", ref _setFilter, 128);
+        DrawFilterBox("###setfilter", "Filter by set or item name (e.g. \"ushanka\")", ref _setFilter);
+
+        if (_config.IncludeGroupedSets && _gear.Building)
+            ImGui.TextDisabled("Looking for more sets by name...");
 
         if (!ImGui.BeginTable("###sets", 2,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH |
@@ -163,46 +247,269 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.TableSetupScrollFreeze(0, 1);
         ImGui.TableHeadersRow();
 
+        // Materialize the filtered list once, then clip. With the name-grouped sets the list runs to a few thousand rows,
+        // and drawing every row's icons each frame would tank the framerate (the same reason the NPC tab clips).
         var filter = _setFilter.Trim().ToLowerInvariant();
-        foreach (var set in _outfits.Sets)
+        var all = AllSets();
+        var visible = filter.Length == 0
+            ? all
+            : all.Where(s => s.SearchText.Contains(filter, StringComparison.Ordinal)).ToList();
+
+        var clipper = new ImGuiListClipper();
+        clipper.Begin(visible.Count, IconSize + ImGui.GetStyle().CellPadding.Y * 2);
+        while (clipper.Step())
         {
-            if (filter.Length > 0 && !set.SearchText.Contains(filter, StringComparison.Ordinal))
-                continue;
-
-            ImGui.TableNextRow();
-            ImGui.TableNextColumn();
-            DrawIcon(set.Icon);
-            ImGui.SameLine();
-            if (ImGui.Selectable($"{set.Name}###set_{set.RowId}", false,
-                    ImGuiSelectableFlags.None, new Vector2(0, IconSize)))
-                _pendingSet = set;
-            if (ImGui.IsItemHovered())
+            for (var row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
             {
-                ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                var count = _config.IncludeAccessories
-                    ? set.Pieces.Count
-                    : set.Pieces.Count(p => !OutfitService.IsAccessory(p.Slot));
-                ImGui.SetTooltip($"Apply \"{set.Name}\" to yourself ({count} pieces)");
-            }
-
-            ImGui.TableNextColumn();
-            foreach (var piece in set.Pieces)
-            {
-                var dimmed = !_config.IncludeAccessories && OutfitService.IsAccessory(piece.Slot);
-                DrawIcon(piece.Icon, dimmed);
-                if (ImGui.IsItemClicked())
-                    _pendingPiece = piece;
+                var set = visible[row];
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                DrawIcon(set.Icon);
+                ImGui.SameLine();
+                if (ImGui.Selectable($"{set.Name}###set_{set.RowId}", false,
+                        ImGuiSelectableFlags.None, new Vector2(0, IconSize)))
+                    _pendingSet = set;
                 if (ImGui.IsItemHovered())
                 {
                     ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
-                    ImGui.SetTooltip($"{piece.Name}\n({piece.Slot}) — click to apply just this piece");
+                    var count = _config.IncludeAccessories
+                        ? set.Pieces.Count
+                        : set.Pieces.Count(p => !OutfitService.IsAccessory(p.Slot));
+                    ImGui.SetTooltip(set.Grouped
+                        ? $"Apply \"{set.Name}\" to yourself ({count} pieces)\nGrouped by item name; the game doesn't list this as a set."
+                        : $"Apply \"{set.Name}\" to yourself ({count} pieces)");
                 }
-                ImGui.SameLine();
+
+                ImGui.TableNextColumn();
+                foreach (var piece in set.Pieces)
+                {
+                    var dimmed = !_config.IncludeAccessories && OutfitService.IsAccessory(piece.Slot);
+                    DrawIcon(piece.Icon, dimmed);
+                    if (ImGui.IsItemClicked())
+                        _pendingPiece = piece;
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+                        DrawPreviewTooltip(piece.Icon, piece.Name, SlotLabel(piece.Slot), null, "Click to apply just this piece");
+                    }
+                    ImGui.SameLine();
+                }
+                ImGui.NewLine();
             }
-            ImGui.NewLine();
         }
+        clipper.End();
 
         ImGui.EndTable();
+    }
+
+    // ---- Loose gear tab -----------------------------------------------------------------------------------------------
+
+    private const float LooseTileSize = 40f;
+    private const float LooseTileGap  = 4f;
+    private const float PreviewSize   = 112f;
+
+    // Index-aligned with GearSlot (Facewear is the last one).
+    private static readonly string[] LooseSlotLabels = { "Head", "Body", "Hands", "Legs", "Feet", "Ears", "Neck", "Wrists", "Ring", "Facewear" };
+
+    private void DrawLooseTab()
+    {
+        var data = _gear.Data;
+        if (data is null)
+        {
+            ImGui.TextDisabled(_gear.Error ?? "Building the gear list...");
+            return;
+        }
+
+        var hide = _config.LooseHideDuplicateLooks;
+        var slot = Math.Clamp(_config.LooseSlot, 0, LooseSlotLabels.Length - 1);
+        DrawLooseSlotChips(ref slot);
+
+        if (ImGui.Checkbox("Hide duplicate looks", ref hide))
+        {
+            _config.LooseHideDuplicateLooks = hide;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Many pieces are the same gear sold once per role (\"of Fending\", \"of Casting\", ...) and look identical.\n" +
+                "On shows one tile for each; hover it to see the variants. Off shows every item.");
+
+        DrawFilterBox("###loosefilter", "Filter by item name", ref _looseFilter);
+
+        var source = hide ? data.Looks[slot] : data.AllLooks[slot];
+        var filter = _looseFilter.Trim().ToLowerInvariant();
+        var visible = filter.Length == 0
+            ? source
+            : source.Where(l => l.SearchText.Contains(filter, StringComparison.Ordinal)).ToList();
+
+        // A count is only useful feedback while a filter is narrowing the list, so it is shown only then.
+        if (filter.Length > 0)
+            ImGui.TextDisabled(visible.Count == 1 ? "1 match" : $"{visible.Count} matches");
+
+        if (!ImGui.BeginChild("###loosegrid", new Vector2(0f, 0f)))
+        {
+            ImGui.EndChild();
+            return;
+        }
+
+        if (visible.Count == 0)
+        {
+            ImGui.TextDisabled("Nothing matches.");
+        }
+        else
+        {
+            // Wrapped icon grid, clipped by row so only the visible tiles are ever drawn.
+            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(LooseTileGap, LooseTileGap));
+            var availX = ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize;
+            var cols   = Math.Max(1, (int)((availX + LooseTileGap) / (LooseTileSize + LooseTileGap)));
+            var rows   = (visible.Count + cols - 1) / cols;
+
+            var clipper = new ImGuiListClipper();
+            clipper.Begin(rows, LooseTileSize + LooseTileGap);
+            while (clipper.Step())
+            {
+                for (var r = clipper.DisplayStart; r < clipper.DisplayEnd; r++)
+                {
+                    for (var c = 0; c < cols; c++)
+                    {
+                        var idx = r * cols + c;
+                        if (idx >= visible.Count)
+                            break;
+                        if (c > 0)
+                            ImGui.SameLine();
+                        DrawLooseTile(visible[idx]);
+                    }
+                }
+            }
+            clipper.End();
+            ImGui.PopStyleVar();
+        }
+
+        ImGui.EndChild();
+    }
+
+    /// <summary>Single-select slot chips, reflowing onto further lines when the window is narrow.</summary>
+    private void DrawLooseSlotChips(ref int slot)
+    {
+        var avail = ImGui.GetContentRegionAvail().X;
+        var x = 0f;
+        const float gap = 6f;
+        for (var i = 0; i < LooseSlotLabels.Length; i++)
+        {
+            var label = LooseSlotLabels[i];
+            var w = ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2f;
+            if (i > 0)
+            {
+                if (x + gap + w > avail) x = 0f;
+                else { ImGui.SameLine(0f, gap); x += gap; }
+            }
+
+            var on = slot == i;
+            if (on)
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.45f, 0.16f, 0.20f, 1f));
+            if (ImGui.Button($"{label}###looseslot{i}"))
+            {
+                slot = i;
+                _config.LooseSlot = i;
+                Plugin.PluginInterface.SavePluginConfig(_config);
+            }
+            if (on)
+                ImGui.PopStyleColor();
+            x += w;
+        }
+    }
+
+    private void DrawLooseTile(GearLook look)
+    {
+        var item = look.Representative;
+        var size = new Vector2(LooseTileSize);
+
+        if (_textures.TryGetFromGameIcon(new GameIconLookup(item.Icon), out var tex)
+            && tex.TryGetWrap(out var wrap, out _))
+            ImGui.Image(wrap.Handle, size);
+        else
+            ImGui.Dummy(size);
+
+        var hovered = ImGui.IsItemHovered();
+        if (ImGui.IsItemClicked())
+            _pendingLoose = item;
+        if (!hovered)
+            return;
+
+        ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        ImGui.GetWindowDrawList().AddRect(
+            ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
+            ImGui.GetColorU32(new Vector4(0.95f, 0.85f, 0.45f, 1f)), 3f);
+
+        var detail = LooseSlotLabels[(int)item.Slot];
+        if (item.Level > 0)
+            detail += $"  |  Lv {item.Level}";          // facewear has no level
+        if (item.JobText.Length > 0)
+            detail += $"  |  {item.JobText}";
+
+        // Other items that look exactly the same (shown when duplicate looks are collapsed).
+        List<string>? same = null;
+        if (look.Variants.Count > 1)
+        {
+            same = look.Variants.Where(v => v.ItemId != item.ItemId).Take(6).Select(v => v.Name).ToList();
+            if (look.Variants.Count - 1 > same.Count)
+                same.Add($"+{look.Variants.Count - 1 - same.Count} more");
+        }
+
+        DrawPreviewTooltip(item.Icon, item.Name, detail, same, "Click to apply");
+    }
+
+    /// <summary>
+    /// The large preview shown on hover - the whole point of the Loose gear tab, since Glamourer itself only shows an
+    /// icon for the piece you already have selected. <paramref name="sameLook"/> lists other items sharing this look.
+    /// </summary>
+    private void DrawPreviewTooltip(uint iconId, string title, string detail, IReadOnlyList<string>? sameLook, string hint)
+    {
+        ImGui.BeginTooltip();
+
+        var size = new Vector2(PreviewSize);
+        if (_textures.TryGetFromGameIcon(new GameIconLookup(iconId), out var tex)
+            && tex.TryGetWrap(out var wrap, out _))
+            ImGui.Image(wrap.Handle, size);
+        else
+            ImGui.Dummy(size);
+
+        ImGui.SameLine();
+        ImGui.BeginGroup();
+        ImGui.TextUnformatted(title);
+        if (detail.Length > 0)
+            ImGui.TextDisabled(detail);
+        if (sameLook is { Count: > 0 })
+        {
+            ImGui.Spacing();
+            ImGui.TextDisabled("Also looks like:");
+            foreach (var line in sameLook)
+                ImGui.TextUnformatted(line);
+        }
+        ImGui.Spacing();
+        ImGui.TextDisabled(hint);
+        ImGui.EndGroup();
+
+        ImGui.EndTooltip();
+    }
+
+    private static string SlotLabel(ApiEquipSlot slot) => slot switch
+    {
+        ApiEquipSlot.Ears => "Earrings",
+        ApiEquipSlot.Neck => "Necklace",
+        ApiEquipSlot.Wrists => "Bracelet",
+        ApiEquipSlot.RFinger or ApiEquipSlot.LFinger => "Ring",
+        ApiEquipSlot.MainHand => "Main hand",
+        ApiEquipSlot.OffHand => "Off hand",
+        _ => slot.ToString(),
+    };
+
+    private void DoApplyLoose(GearItem item)
+    {
+        var ok = _gear.ApplyPiece(item, _glam, 0);
+        SetStatus(ok,
+            $"Applied \"{item.Name}\" ({LooseSlotLabels[(int)item.Slot]}).",
+            $"Couldn't apply \"{item.Name}\" ({LooseSlotLabels[(int)item.Slot]}), see /xllog.");
     }
 
     private void DrawNpcTab()
@@ -263,8 +570,7 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.SameLine();
         DrawIncludeAccessoriesCheckbox();
 
-        ImGui.SetNextItemWidth(-1);
-        ImGui.InputTextWithHint("###npcfilter", "Filter by NPC, race, or clan name", ref _npcFilter, 128);
+        DrawFilterBox("###npcfilter", "Filter by NPC, race, or clan name", ref _npcFilter);
 
         if (!ImGui.BeginTable("###npcs", 3,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH |
@@ -417,6 +723,12 @@ public sealed class MainWindow : Window, IDisposable
     private void DoApplySet(OutfitSet set)
     {
         var (applied, failed) = _outfits.Apply(set, _glam, 0, _config.IncludeAccessories);
+        if (applied == 0 && failed == 0)
+        {
+            // e.g. an accessories-only set while "Include accessories" is off: nothing was attempted.
+            SetStatus(false, string.Empty, $"\"{set.Name}\" only has accessories. Turn on Include accessories to apply it.");
+            return;
+        }
         SetStatus(failed == 0,
             $"Applied \"{set.Name}\" ({applied} pieces).",
             $"Applied \"{set.Name}\": {applied} ok, {failed} failed (see /xllog).");

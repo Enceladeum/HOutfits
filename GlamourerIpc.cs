@@ -1,3 +1,4 @@
+using System;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Glamourer.Api.Enums;
@@ -29,6 +30,7 @@ public sealed class GlamourerIpc
 {
     private readonly ApiVersion _apiVersion;
     private readonly SetItem _setItem;
+    private readonly SetBonusItem _setBonusItem;
     private readonly RevertState _revert;
     private readonly Glamourer.Api.IpcSubscribers.GetState _getState;
     private readonly Glamourer.Api.IpcSubscribers.ApplyState _applyState;
@@ -37,6 +39,7 @@ public sealed class GlamourerIpc
     {
         _apiVersion = new ApiVersion(pi);
         _setItem    = new SetItem(pi);
+        _setBonusItem = new SetBonusItem(pi);
         _revert     = new RevertState(pi);
         _getState   = new Glamourer.Api.IpcSubscribers.GetState(pi);
         _applyState = new Glamourer.Api.IpcSubscribers.ApplyState(pi);
@@ -76,6 +79,24 @@ public sealed class GlamourerIpc
             key: 0,                    // no lock
             flags: ApplyFlag.Equipment // sticky (no Once), equipment only
         );
+
+    /// <summary>
+    /// Apply one facewear piece (Glamourer calls these "bonus items"; the only bonus slot is Glasses). Same semantics as
+    /// <see cref="ApplyItem"/>: sticky and unlocked. The id is the game's Glasses row id. An older Glamourer that predates
+    /// bonus items doesn't register the call, so a failure here is reported rather than thrown.
+    /// </summary>
+    public GlamourerApiEc ApplyBonusItem(int objectIndex, ApiBonusSlot slot, ulong itemId)
+    {
+        try
+        {
+            return _setBonusItem.Invoke(objectIndex, slot, itemId, key: 0, flags: ApplyFlag.Equipment);
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "SetBonusItem failed - is Glamourer up to date?");
+            return GlamourerApiEc.UnknownError;
+        }
+    }
 
     /// <summary>
     /// Revert this actor fully back to game state — equipment AND customization,

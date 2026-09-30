@@ -9,14 +9,17 @@ namespace HOutfits;
 
 /// <summary>
 /// One displayable outfit row: the set's name + icon, and the component pieces,
-/// each already paired with its equip slot.
+/// each already paired with its equip slot. <paramref name="Grouped"/> marks a set
+/// that isn't in the game's own list but was recovered by matching item names
+/// (see <see cref="GearGrouper"/>); it lists and applies exactly like a real one.
 /// </summary>
 public sealed record OutfitSet(
     uint RowId,
     string Name,
     uint Icon,
     IReadOnlyList<OutfitPiece> Pieces,
-    string SearchText);
+    string SearchText,
+    bool Grouped = false);
 
 public sealed record OutfitPiece(uint ItemId, string Name, uint Icon, ApiEquipSlot Slot);
 

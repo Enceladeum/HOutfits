@@ -19,10 +19,23 @@ Open with `/houtfits`, filter, and:
 - **Filter by set *or* item name** — typing `ushanka` finds the Imperial sets
   that include the Ushanka head piece, even though "Ushanka" isn't in the set's
   own name.
+- **Hover any piece icon** → a large preview of it, so you can see what you're about
+  to put on before you apply it (Glamourer itself only shows an icon for the piece you
+  already have selected).
+- **Name-grouped sets.** The game only lists a fraction of its armour as named sets.
+  HOutfits also recognises gear that is obviously a set from its item names (for
+  example *Allagan Visor of Striking*, *Allagan Cuirass of Striking*, ... become
+  **Allagan of Striking**) and lists it with the rest, so it applies in one click too.
+  Untick **Include name-grouped sets** to see only the game's own sets.
+- **Loose gear tab.** Every wearable piece that belongs to no set at all, browsed by
+  slot as an icon grid: hover for a large preview, click to apply just that piece.
+  Pieces that are the same gear sold once per role ("of Fending", "of Casting", ...)
+  look identical, so **Hide duplicate looks** collapses them into one tile. A **Facewear**
+  chip lists glasses and the like, which Glamourer treats as a slot of their own.
 
-**Scope:** this is a convenience for applying *complete, named sets* (and their
-individual pieces). Loose gear that isn't part of a named `MirageStoreSetItem`
-set isn't listed — for arbitrary single items, use Glamourer directly.
+**Scope:** armour, accessories and facewear. Complete sets (the game's own and the ones
+recovered by name) apply in one click; anything that belongs to no set is on the
+**Loose gear** tab. Weapons aren't covered.
 
 ## Installing
 
@@ -70,6 +83,28 @@ weapon.
 
 **Search.** Each row carries a pre-lowercased haystack of its set name plus every
 piece name, so the filter is a cheap substring match that covers piece names too.
+
+**Name-grouped sets.** Most of the game's armour is named `<Stem> <Noun> of <Role>`
+(Fending, Maiming, Striking, Scouting, Aiming, Casting, Healing, Slaying, Crafting,
+Gathering), optionally with a `+N` upgrade tier, and the pieces of one set share the
+stem and the role. A role word the game introduces later is picked up automatically once
+ten or more items use it. `GearGrouper` groups the gear that isn't in any game set on that
+basis. Multi-word nouns ("Dress Gloves") join the set that matches their shorter stem,
+and when several tiers share a stem ("Titanium ... of Fending" at level 54 and 56) they
+are split by item level, then by model, so a set never has two pieces in one slot; such
+sets are labelled with their level, e.g. `Titanium of Fending (Lv 54)`. Gear without a
+role suffix is only grouped when three or more pieces share both the name stem and the
+same model set id ("Amon's Hat / Coat / Sleeves / Breeches / Boots"). Anything else stays
+loose. The scan runs once, on a background thread, the first time the window is opened.
+
+**Loose gear.** The pieces left over after grouping, by slot. A slot is the one column of
+the item's `EquipSlotCategory` set to 1. Items whose slot, model and icon are identical
+are the same look; they collapse into one tile that applies the lowest-numbered variant.
+
+Facewear isn't in the Item sheet. It comes from the `Glasses` sheet (one row per shape and
+colour; the row id is the id Glamourer knows it by) and is applied through Glamourer's
+`SetBonusItem` call, so it needs a Glamourer recent enough to have bonus items. It keeps the
+game's own order, so each shape's colour variants stay together. Facewear is never part of a set.
 
 **Apply behaviour.** `GlamourerIpc.ApplyItem` calls Glamourer's `SetItem` with
 `ApplyFlag.Equipment`, no `Once`, `key = 0`. Verified against Glamourer's source:
@@ -136,9 +171,14 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
 
 - `Plugin.cs` — entry point, DI, window system, `/houtfits` command.
 - `OutfitService.cs` — reads MirageStoreSetItem's per-slot columns, apply loop.
-- `GlamourerIpc.cs` — the three IPC calls (version check, `SetItem`, revert).
-- `MainWindow.cs` — the ripped-down table UI.
-- `Configuration.cs`: persisted settings (the **Include accessories** toggle).
+- `GearService.cs` — the one-off background scan: name-grouped sets and loose gear.
+- `GearGrouper.cs` — the name/model grouping rules and the loose-gear tiles (no game or
+  Dalamud types, so it can be tested against real data in a plain console app).
+- `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab.
+- `GlamourerIpc.cs`, `MonikerIpc.cs` — the IPC wrappers.
+- `MainWindow.cs` — the tabbed table/grid UI.
+- `SlotIconService.cs` — generic slot silhouettes for NPC pieces.
+- `Configuration.cs`: persisted settings.
 - `HOutfits.csproj` — project + manifest metadata (no separate `.json`).
 
 ## Caveats

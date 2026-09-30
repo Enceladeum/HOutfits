@@ -43,4 +43,20 @@ public sealed class Configuration : IPluginConfiguration
     /// that one piece regardless of this setting.
     /// </summary>
     public bool NpcIncludeWeapons { get; set; } = false;
+
+    /// <summary>
+    /// Outfit sets tab: also list sets recovered from item names (e.g. "Allagan of
+    /// Striking"), which the game doesn't list as sets. On by default; turn off to
+    /// see only the game's own sets.
+    /// </summary>
+    public bool IncludeGroupedSets { get; set; } = true;
+
+    /// <summary>Loose gear tab: the selected slot chip (index into <see cref="GearSlot"/>).</summary>
+    public int LooseSlot { get; set; } = 0;
+
+    /// <summary>
+    /// Loose gear tab: collapse pieces that share an identical look (role variants
+    /// such as "of Fending" / "of Casting") into one tile. On by default.
+    /// </summary>
+    public bool LooseHideDuplicateLooks { get; set; } = true;
 }

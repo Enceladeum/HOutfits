@@ -20,6 +20,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem _windows = new("HOutfits");
     private readonly MainWindow _main;
     private readonly NpcService _npcs;
+    private readonly GearService _gear;
     private readonly SlotIconService _slotIcons;
 
     public Plugin()
@@ -31,8 +32,10 @@ public sealed class Plugin : IDalamudPlugin
         var bnpcNames = new BNpcNameData(Log);
         var npcs     = new NpcService(DataManager, Log, bnpcNames);
         var npcState = new NpcStateBuilder(glam, Log);
+        var gear     = new GearService(DataManager, Log);
+        _gear        = gear;
         _slotIcons   = new SlotIconService(Log);
-        _main        = new MainWindow(outfits, npcs, npcState, glam, moniker, TextureProvider, _slotIcons, Log, config);
+        _main        = new MainWindow(outfits, gear, npcs, npcState, glam, moniker, TextureProvider, _slotIcons, Log, config);
         _npcs        = npcs;
 
         // Kick the BNpc name fetch. When it finishes, drop the NPC cache so battle
@@ -60,6 +63,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= OpenMain;
         _windows.RemoveAllWindows();
         _main.Dispose();
+        _gear.Dispose();
         _slotIcons.Dispose();
     }
 
