@@ -190,7 +190,12 @@ public sealed class MainWindow : Window, IDisposable
 
         if (!ReferenceEquals(_mergedFromOfficial, official) || !ReferenceEquals(_mergedFromGrouped, grouped))
         {
-            _mergedSets         = official.Concat(grouped).OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
+            // On an English client everything sorts into one alphabetical list. On other languages the recovered sets carry
+            // English labels, which would sort oddly among localized names (all ahead of Japanese ones, say), so they follow
+            // the game's own sets instead, each block still alphabetical.
+            _mergedSets = _gear.Data?.LocalizedClient == true
+                ? official.Concat(grouped).ToList()
+                : official.Concat(grouped).OrderBy(s => s.Name, StringComparer.Ordinal).ToList();
             _mergedFromOfficial = official;
             _mergedFromGrouped  = grouped;
         }

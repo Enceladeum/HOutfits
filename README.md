@@ -97,6 +97,11 @@ role suffix is only grouped when three or more pieces share both the name stem a
 same model set id ("Amon's Hat / Coat / Sleeves / Breeches / Boots"). Anything else stays
 loose. The scan runs once, on a background thread, the first time the window is opened.
 
+The rules read the English item names whatever language the game runs in (looked up by item
+id), so every client finds the same sets. Piece names are still shown in your language and
+are searchable in either language; the labels of the recovered sets stay in English, and on
+non-English clients they are listed after the game's own sets.
+
 **Loose gear.** The pieces left over after grouping, by slot. A slot is the one column of
 the item's `EquipSlotCategory` set to 1. Items whose slot, model and icon are identical
 are the same look; they collapse into one tile that applies the lowest-numbered variant.

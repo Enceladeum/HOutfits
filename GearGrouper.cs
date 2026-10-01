@@ -12,9 +12,16 @@ namespace HOutfits;
 /// </summary>
 public enum GearSlot { Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, Ring, Facewear }
 
-/// <summary>One equippable item that is NOT part of a named set on the Outfit sets tab.</summary>
-public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot, byte Level, ulong Model, string JobText)
+/// <summary>
+/// One equippable item that is NOT part of a named set on the Outfit sets tab. <paramref name="Name"/> is what the UI shows,
+/// in the game client's language. <paramref name="EnglishName"/> is the same item's English name when that differs; the
+/// grouping rules read only the English one (<see cref="GroupName"/>), so they find the same sets on every client language.
+/// </summary>
+public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot, byte Level, ulong Model, string JobText, string? EnglishName = null)
 {
+    /// <summary>The name the grouping rules read: English wherever it is known.</summary>
+    public string GroupName => string.IsNullOrEmpty(EnglishName) ? Name : EnglishName;
+
     /// <summary>The model's set id (low 16 bits of <c>Item.ModelMain</c>).</summary>
     public ushort ModelSet => (ushort)(Model & 0xFFFF);
 
@@ -131,7 +138,7 @@ public static class GearGrouper
         {
             var ordered = g.Items.OrderBy(i => i.Slot).ToList();
             var rep = ordered.Find(i => i.Slot == GearSlot.Body) ?? ordered[0];
-            var haystack = g.Name + "\n" + string.Join('\n', ordered.Select(i => i.Name));
+            var haystack = g.Name + "\n" + string.Join('\n', ordered.SelectMany(NamesOf));
             sets.Add(new GearSet
             {
                 Id = sets.Count,
@@ -160,7 +167,7 @@ public static class GearGrouper
                 {
                     Representative = variants[0],
                     Variants = variants,
-                    SearchText = string.Join('\n', variants.Select(v => v.Name)).ToLowerInvariant(),
+                    SearchText = string.Join('\n', variants.SelectMany(NamesOf)).ToLowerInvariant(),
                 });
             }
         }
@@ -171,7 +178,7 @@ public static class GearGrouper
                 {
                     Representative = it,
                     Variants = new[] { it },
-                    SearchText = it.Name.ToLowerInvariant(),
+                    SearchText = string.Join('\n', NamesOf(it)).ToLowerInvariant(),
                 });
         }
 
@@ -199,7 +206,7 @@ public static class GearGrouper
         var wordCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var it in items)
         {
-            var m = RoleTail.Match(it.Name);
+            var m = RoleTail.Match(it.GroupName);
             if (!m.Success) continue;
             candidates.Add((it, m));
             var word = m.Groups["role"].Value;
@@ -275,9 +282,9 @@ public static class GearGrouper
         foreach (var it in items)
         {
             if (alreadyGrouped.Contains(it.ItemId)) continue;
-            if (AnyOfTail.IsMatch(it.Name)) continue;                 // role-style name that rule 1 declined
-            if (it.Name.EndsWith(')')) continue;                      // "(Red)" colour variants of dated gear
-            var tokens = it.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (AnyOfTail.IsMatch(it.GroupName)) continue;            // role-style name that rule 1 declined
+            if (it.GroupName.EndsWith(')')) continue;                 // "(Red)" colour variants of dated gear
+            var tokens = it.GroupName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (tokens.Length < 2) continue;
             var key = (string.Join(' ', tokens[..^1]), it.ModelSet);
             if (!buckets.TryGetValue(key, out var list)) buckets[key] = list = new List<GearItem>();
@@ -291,6 +298,14 @@ public static class GearGrouper
             if (list.GroupBy(i => i.Slot).Any(g => g.Count() > 1)) continue;
             groups.Add(new Group(kv.Key.Stem, list));
         }
+    }
+
+    /// <summary>The shown name, plus the English one when it differs, so a search works in either language.</summary>
+    private static IEnumerable<string> NamesOf(GearItem item)
+    {
+        yield return item.Name;
+        if (!string.IsNullOrEmpty(item.EnglishName) && !string.Equals(item.EnglishName, item.Name, StringComparison.Ordinal))
+            yield return item.EnglishName;
     }
 
     private static bool HasSlotConflict(List<Parsed> list)
