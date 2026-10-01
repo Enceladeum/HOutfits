@@ -143,8 +143,16 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Returns to game state (equipment, appearance, and any applied name).");
 
+        // The status rides on the button's row rather than getting a line of its own, so the header is always one line
+        // tall: the tabs, and the search box under them, never shift when the first message appears.
         if (_status.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
             ImGui.TextColored(_statusColor, _status);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(_status);   // the full message, in case a long item name clips at the window edge
+        }
 
         ImGui.Separator();
     }
@@ -228,14 +236,19 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawSetsTab()
     {
+        // The search box is the first row of every tab, so it sits at the same height on all of them.
+        DrawFilterBox("###setfilter", "Filter by set or item name (e.g. \"ushanka\")", ref _setFilter);
+
         DrawIncludeAccessoriesCheckbox();
         ImGui.SameLine();
         DrawIncludeGroupedSetsCheckbox();
-
-        DrawFilterBox("###setfilter", "Filter by set or item name (e.g. \"ushanka\")", ref _setFilter);
-
         if (_config.IncludeGroupedSets && _gear.Building)
-            ImGui.TextDisabled("Looking for more sets by name...");
+        {
+            // Beside the toggles rather than on a line of its own, so the table doesn't jump when the scan finishes.
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextDisabled("Finding more sets...");
+        }
 
         if (!ImGui.BeginTable("###sets", 2,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH |
@@ -313,6 +326,9 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawLooseTab()
     {
+        // The search box is the first row of every tab, so it sits at the same height on all of them.
+        DrawFilterBox("###loosefilter", "Filter by item name", ref _looseFilter);
+
         var data = _gear.Data;
         if (data is null)
         {
@@ -334,17 +350,20 @@ public sealed class MainWindow : Window, IDisposable
                 "Many pieces are the same gear sold once per role (\"of Fending\", \"of Casting\", ...) and look identical.\n" +
                 "On shows one tile for each; hover it to see the variants. Off shows every item.");
 
-        DrawFilterBox("###loosefilter", "Filter by item name", ref _looseFilter);
-
         var source = hide ? data.Looks[slot] : data.AllLooks[slot];
         var filter = _looseFilter.Trim().ToLowerInvariant();
         var visible = filter.Length == 0
             ? source
             : source.Where(l => l.SearchText.Contains(filter, StringComparison.Ordinal)).ToList();
 
-        // A count is only useful feedback while a filter is narrowing the list, so it is shown only then.
+        // A count is only useful while a filter is narrowing the list, so it is shown only then, on the checkbox's row
+        // so the grid never shifts as you type.
         if (filter.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
             ImGui.TextDisabled(visible.Count == 1 ? "1 match" : $"{visible.Count} matches");
+        }
 
         if (!ImGui.BeginChild("###loosegrid", new Vector2(0f, 0f)))
         {
@@ -514,6 +533,9 @@ public sealed class MainWindow : Window, IDisposable
 
     private void DrawNpcTab()
     {
+        // The search box is the first row of every tab, so it sits at the same height on all of them.
+        DrawFilterBox("###npcfilter", "Filter by NPC, race, or clan name", ref _npcFilter);
+
         var mode = _config.NpcApplyMode;
         ImGui.TextUnformatted("Apply:");
         ImGui.SameLine();
@@ -569,8 +591,6 @@ public sealed class MainWindow : Window, IDisposable
 
         ImGui.SameLine();
         DrawIncludeAccessoriesCheckbox();
-
-        DrawFilterBox("###npcfilter", "Filter by NPC, race, or clan name", ref _npcFilter);
 
         if (!ImGui.BeginTable("###npcs", 3,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH |
