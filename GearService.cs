@@ -25,6 +25,9 @@ public sealed class GearData
 
     public int LoosePieceCount { get; init; }
 
+    /// <summary>Every weapon, by class or job, for the Weapons tab.</summary>
+    public WeaponIndex Weapons { get; init; } = new();
+
     /// <summary>
     /// True when the game client is not English, i.e. item names differ from the English ones the grouping rules read. The
     /// labels of the name-grouped sets are English-derived, so the Outfit sets tab lists them after the game's own sets there
@@ -36,8 +39,9 @@ public sealed class GearData
 /// <summary>
 /// Scans the Item sheet for wearable gear that the Outfit sets tab does not already cover (the game's own
 /// <c>MirageStoreSetItem</c> sets), then splits it in two: pieces that clearly belong together are grouped into sets by
-/// <see cref="GearGrouper"/>; everything else stays loose. Runs once, lazily, on a background thread, so opening the window
-/// is the only thing that ever triggers the work.
+/// <see cref="GearGrouper"/>; everything else stays loose. The same pass collects every weapon, which the Weapons tab lists
+/// by class (see <see cref="WeaponIndex"/>). Runs once, lazily, on a background thread, so opening the window is the only
+/// thing that ever triggers the work.
 /// </summary>
 public sealed class GearService : IDisposable
 {
@@ -112,14 +116,20 @@ public sealed class GearService : IDisposable
                     if (id != 0) inSet.Add(id);
             }
 
-            var loose = new List<GearItem>(16000);
+            var loose   = new List<GearItem>(16000);
+            var weapons = new List<GearItem>(9000);
             foreach (var it in items)
             {
                 if (_disposed) return;
-                if (it.RowId == 0 || it.ModelMain == 0 || inSet.Contains(it.RowId)) continue;
+                if (it.RowId == 0 || it.ModelMain == 0) continue;
                 if (it.EquipSlotCategory.RowId == 0 || !it.EquipSlotCategory.IsValid) continue;
-                var slot = SlotOf(it.EquipSlotCategory.Value);
+                var category   = it.EquipSlotCategory.Value;
+                var weaponSlot = WeaponSheets.WeaponSlotOf(category);
+                var slot       = weaponSlot ?? SlotOf(category);
                 if (slot is null) continue;
+                // A weapon is listed whether or not it is part of a set (the Outfit sets tab never shows weapons); other gear
+                // that is part of a set belongs to that tab.
+                if (weaponSlot is null && inSet.Contains(it.RowId)) continue;
                 var name = it.Name.ToString().Trim();
                 if (name.Length == 0) continue;
                 var job = it.ClassJobCategory.ValueNullable?.Name.ToString() ?? string.Empty;
@@ -135,7 +145,9 @@ public sealed class GearService : IDisposable
                         itemsEn = null;
                     }
                 }
-                loose.Add(new GearItem(it.RowId, name, it.Icon, slot.Value, it.LevelEquip, it.ModelMain, job, english));
+                var piece = new GearItem(it.RowId, name, it.Icon, slot.Value, it.LevelEquip, it.ModelMain, job, english,
+                    it.ModelSub, it.ClassJobCategory.RowId);
+                (weaponSlot is null ? loose : weapons).Add(piece);
             }
 
             if (_disposed) return;
@@ -156,23 +168,53 @@ public sealed class GearService : IDisposable
                 g.SearchText,
                 Grouped: true)).ToList();
 
+            var weaponIndex = ReadWeaponIndex(weapons);
+
             _result = new GearData
             {
                 GroupedSets     = asOutfits,
                 Looks           = GearGrouper.BuildLooks(tiles, dedupe: true).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
                 AllLooks        = GearGrouper.BuildLooks(tiles, dedupe: false).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
                 LoosePieceCount = tiles.Count,
+                Weapons         = weaponIndex,
                 LocalizedClient = loose.Any(i => i.EnglishName is not null),
             };
 
             _log.Information(
-                "Gear scan: {Loose} loose wearable items -> {Sets} name-grouped sets ({Grouped} pieces) + {Singles} ungrouped pieces + {Face} facewear.",
-                loose.Count, asOutfits.Count, groupedId.Count, singles.Count, facewear.Count);
+                "Gear scan: {Loose} loose wearable items -> {Sets} name-grouped sets ({Grouped} pieces) + {Singles} ungrouped pieces + {Face} facewear; {Weapons} weapons for {Classes} classes.",
+                loose.Count, asOutfits.Count, groupedId.Count, singles.Count, facewear.Count, weapons.Count, weaponIndex.Classes.Count);
         }
         catch (Exception ex)
         {
             _error = "The gear scan failed (see /xllog).";
             _log.Error(ex, "Gear scan failed.");
+        }
+    }
+
+    /// <summary>
+    /// Sorts the weapons into the class and job lists the Weapons tab shows. A failure here costs only that tab (it then says so)
+    /// rather than the whole scan, so the sets and loose gear still arrive.
+    /// </summary>
+    private WeaponIndex ReadWeaponIndex(IReadOnlyList<GearItem> weapons)
+    {
+        try
+        {
+            var jobs       = _data.GetExcelSheet<ClassJob>();
+            var categories = _data.GetExcelSheet<ClassJobCategory>();
+            if (jobs is null || categories is null)
+            {
+                _log.Warning("Couldn't load the ClassJob / ClassJobCategory sheets; the Weapons tab will be empty.");
+                return new WeaponIndex();
+            }
+
+            var (classes, byCategory) = WeaponSheets.ReadClasses(
+                jobs, TryEnglishSheet<ClassJob>(), categories, weapons.Select(w => w.JobCategory));
+            return WeaponIndex.Build(weapons, classes, byCategory);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Couldn't sort the weapons by class; the Weapons tab will be empty.");
+            return new WeaponIndex();
         }
     }
 
@@ -235,38 +277,42 @@ public sealed class GearService : IDisposable
         return en.Length == 0 || string.Equals(en, shown, StringComparison.Ordinal) ? null : en;
     }
 
-    /// <summary>Apply one loose piece to the actor. Only touches that slot, so it is additive over whatever else is worn.</summary>
-    public bool ApplyPiece(GearItem item, GlamourerIpc glam, int objectIndex)
+    /// <summary>
+    /// Apply one loose piece or weapon to the actor and return what Glamourer said. Only touches that slot, so it is additive
+    /// over whatever else is worn.
+    /// </summary>
+    public GlamourerApiEc ApplyPiece(GearItem item, GlamourerIpc glam, int objectIndex)
     {
         // Facewear goes through Glamourer's separate "bonus item" call; everything else is an ordinary equipment item.
         var ec = item.Slot == GearSlot.Facewear
             ? glam.ApplyBonusItem(objectIndex, ApiBonusSlot.Glasses, item.ItemId)
             : glam.ApplyItem(objectIndex, ToApi(item.Slot), item.ItemId);
-        if (ec == GlamourerApiEc.Success)
-            return true;
-
-        _log.Warning("Applying {Item} ({Slot}) failed: {Ec}", item.Name, item.Slot, ec);
-        return false;
+        if (ec != GlamourerApiEc.Success)
+            _log.Warning("Applying {Item} ({Slot}) failed: {Ec}", item.Name, item.Slot, ec);
+        return ec;
     }
 
     /// <summary>Rings go to the right finger, matching how the Outfit sets tab applies them. Facewear has no equipment slot.</summary>
     internal static ApiEquipSlot ToApi(GearSlot slot) => slot switch
     {
-        GearSlot.Head   => ApiEquipSlot.Head,
-        GearSlot.Body   => ApiEquipSlot.Body,
-        GearSlot.Hands  => ApiEquipSlot.Hands,
-        GearSlot.Legs   => ApiEquipSlot.Legs,
-        GearSlot.Feet   => ApiEquipSlot.Feet,
-        GearSlot.Ears   => ApiEquipSlot.Ears,
-        GearSlot.Neck   => ApiEquipSlot.Neck,
-        GearSlot.Wrists => ApiEquipSlot.Wrists,
-        GearSlot.Ring   => ApiEquipSlot.RFinger,
-        _               => ApiEquipSlot.Unknown,
+        GearSlot.Head     => ApiEquipSlot.Head,
+        GearSlot.Body     => ApiEquipSlot.Body,
+        GearSlot.Hands    => ApiEquipSlot.Hands,
+        GearSlot.Legs     => ApiEquipSlot.Legs,
+        GearSlot.Feet     => ApiEquipSlot.Feet,
+        GearSlot.Ears     => ApiEquipSlot.Ears,
+        GearSlot.Neck     => ApiEquipSlot.Neck,
+        GearSlot.Wrists   => ApiEquipSlot.Wrists,
+        GearSlot.Ring     => ApiEquipSlot.RFinger,
+        GearSlot.MainHand => ApiEquipSlot.MainHand,
+        GearSlot.OffHand  => ApiEquipSlot.OffHand,
+        _                 => ApiEquipSlot.Unknown,
     };
 
     /// <summary>
     /// The slot an item occupies = the one column of its EquipSlotCategory set to 1 (-1 means "blocks that slot", 0 means
-    /// unrelated). Weapons and soul crystals return null: this tab is armour and accessories only.
+    /// unrelated). Weapons (see <see cref="WeaponSheets.WeaponSlotOf"/>) and soul crystals return null: this is armour and
+    /// accessories only.
     /// </summary>
     private static GearSlot? SlotOf(EquipSlotCategory c)
     {

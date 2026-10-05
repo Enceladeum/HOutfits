@@ -13,6 +13,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
+    [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     private const string Command = "/houtfits";
@@ -35,7 +37,8 @@ public sealed class Plugin : IDalamudPlugin
         var gear     = new GearService(DataManager, Log);
         _gear        = gear;
         _slotIcons   = new SlotIconService(Log);
-        _main        = new MainWindow(outfits, gear, npcs, npcState, glam, moniker, TextureProvider, _slotIcons, Log, config);
+        var player   = new PlayerContext(PlayerState, ClientState);
+        _main        = new MainWindow(outfits, gear, npcs, npcState, glam, moniker, player, TextureProvider, _slotIcons, Log, config);
         _npcs        = npcs;
 
         // Kick the BNpc name fetch. When it finishes, drop the NPC cache so battle

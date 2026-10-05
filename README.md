@@ -32,10 +32,16 @@ Open with `/houtfits`, filter, and:
   Pieces that are the same gear sold once per role ("of Fending", "of Casting", ...)
   look identical, so **Hide duplicate looks** collapses them into one tile. A **Facewear**
   chip lists glasses and the like, which Glamourer treats as a slot of their own.
+- **Weapons tab.** Every weapon, by class or job, in the same icon grid: hover for a large
+  preview, click to apply. The class you are playing is always the first chip. The other
+  classes are greyed out: you can open them and look, but Glamourer only applies the weapons
+  of the class you are on, so they are preview only until you are in GPose, where every class
+  is available. Shields and a crafter's second tool are under **Off hand**.
 
-**Scope:** armour, accessories and facewear. Complete sets (the game's own and the ones
-recovered by name) apply in one click; anything that belongs to no set is on the
-**Loose gear** tab. Weapons aren't covered.
+**Scope:** armour, accessories, facewear and weapons. Complete sets (the game's own and the
+ones recovered by name) apply in one click; anything that belongs to no set is on the
+**Loose gear** tab, and weapons are on the **Weapons** tab. Applying a set never changes your
+weapon.
 
 ## Installing
 
@@ -111,6 +117,20 @@ colour; the row id is the id Glamourer knows it by) and is applied through Glamo
 `SetBonusItem` call, so it needs a Glamourer recent enough to have bonus items. It keeps the
 game's own order, so each shape's colour variants stay together. Facewear is never part of a set.
 
+**Weapons.** An item is a weapon when its `EquipSlotCategory` has the main hand or the off
+hand set (two-handed weapons are the main hand, and soul crystals are neither). Which classes
+can use it comes from its `ClassJobCategory`, which has one yes/no column per class and job;
+those columns are named by the English abbreviation, so they are matched to the `ClassJob`
+sheet through the English names and work on every client language. Each class gets its own
+list, split by hand, and the look rules are the loose gear ones with one addition: a weapon's
+second model (the other dagger, the arrow) is part of how it looks. The chips follow the
+game's own class order. A base class such as Gladiator gets no chip of its own while its job
+(Paladin) covers it, unless it is the class you are on, in which case it leads. Your class
+comes from `IPlayerState` and GPose from `IClientState`, both read each frame, so changing
+job or entering GPose is reflected at once. HOutfits does not try to get around Glamourer's
+rule that, outside GPose, only your own class's weapons can be applied: it greys the others
+out and leaves it there. If Glamourer still turns a weapon down, the status line says so.
+
 **Apply behaviour.** `GlamourerIpc.ApplyItem` calls Glamourer's `SetItem` with
 `ApplyFlag.Equipment`, no `Once`, `key = 0`. Verified against Glamourer's source:
 
@@ -176,9 +196,12 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
 
 - `Plugin.cs` — entry point, DI, window system, `/houtfits` command.
 - `OutfitService.cs` — reads MirageStoreSetItem's per-slot columns, apply loop.
-- `GearService.cs` — the one-off background scan: name-grouped sets and loose gear.
+- `GearService.cs`: the one-off background scan: name-grouped sets, loose gear and weapons.
 - `GearGrouper.cs` — the name/model grouping rules and the loose-gear tiles (no game or
   Dalamud types, so it can be tested against real data in a plain console app).
+- `WeaponIndex.cs`, `WeaponSheets.cs`: the Weapons tab's per-class lists (the first has no
+  game types at all, the second only Lumina's, so both can be checked against the real sheets
+  in a console app). `PlayerContext.cs`: your current class and whether you are in GPose.
 - `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab.
 - `GlamourerIpc.cs`, `MonikerIpc.cs` — the IPC wrappers.
 - `MainWindow.cs` — the tabbed table/grid UI.

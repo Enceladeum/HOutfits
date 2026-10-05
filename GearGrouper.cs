@@ -6,18 +6,21 @@ using System.Text.RegularExpressions;
 namespace HOutfits;
 
 /// <summary>
-/// The wearable (non-weapon) slots the Loose gear tab covers. Facewear is last and is a different kind of thing: it comes
-/// from the Glasses sheet rather than the Item sheet, is applied through Glamourer's "bonus item" call, and never belongs
-/// to a set.
+/// The slots the Loose gear and Weapons tabs cover. Facewear is a different kind of thing: it comes from the Glasses sheet
+/// rather than the Item sheet, is applied through Glamourer's "bonus item" call, and never belongs to a set. The two weapon
+/// slots come last; weapons live on their own tab and never belong to a set either.
 /// </summary>
-public enum GearSlot { Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, Ring, Facewear }
+public enum GearSlot { Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, Ring, Facewear, MainHand, OffHand }
 
 /// <summary>
 /// One equippable item that is NOT part of a named set on the Outfit sets tab. <paramref name="Name"/> is what the UI shows,
 /// in the game client's language. <paramref name="EnglishName"/> is the same item's English name when that differs; the
 /// grouping rules read only the English one (<see cref="GroupName"/>), so they find the same sets on every client language.
+/// For a weapon, <paramref name="ModelSub"/> is its second model (the other hand, the arrow, the off-blade) which is part of
+/// how it looks, and <paramref name="JobCategory"/> is its ClassJobCategory row id, i.e. which classes can use it.
 /// </summary>
-public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot, byte Level, ulong Model, string JobText, string? EnglishName = null)
+public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot, byte Level, ulong Model, string JobText,
+    string? EnglishName = null, ulong ModelSub = 0, uint JobCategory = 0)
 {
     /// <summary>The name the grouping rules read: English wherever it is known.</summary>
     public string GroupName => string.IsNullOrEmpty(EnglishName) ? Name : EnglishName;
@@ -26,6 +29,8 @@ public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot
     public ushort ModelSet => (ushort)(Model & 0xFFFF);
 
     public bool IsAccessory => Slot is GearSlot.Ears or GearSlot.Neck or GearSlot.Wrists or GearSlot.Ring;
+
+    public bool IsWeapon => Slot is GearSlot.MainHand or GearSlot.OffHand;
 }
 
 /// <summary>A set recovered from item names (and model ids): pieces are ordered head to ring, at most one per slot.</summary>
@@ -98,8 +103,8 @@ public static class GearGrouper
 
     public static List<GearSet> BuildSets(IReadOnlyList<GearItem> items)
     {
-        // Facewear is never part of a set.
-        items = items.Where(i => i.Slot != GearSlot.Facewear).ToList();
+        // Only armour and accessories form sets: facewear and weapons never do.
+        items = items.Where(i => i.Slot is not (GearSlot.Facewear or GearSlot.MainHand or GearSlot.OffHand)).ToList();
 
         var groups = new List<Group>();
         BuildRoleGroups(items, groups);
@@ -160,7 +165,7 @@ public static class GearGrouper
 
         if (dedupe)
         {
-            foreach (var grp in items.GroupBy(i => (i.Slot, i.Model, i.Icon)))
+            foreach (var grp in items.GroupBy(i => (i.Slot, i.Model, i.ModelSub, i.Icon)))
             {
                 var variants = grp.OrderBy(i => i.ItemId).ToList();
                 perSlot[(int)grp.Key.Slot].Add(new GearLook

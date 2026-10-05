@@ -11,11 +11,14 @@ using Glamourer.Api.Enums;
 namespace HOutfits;
 
 /// <summary>
-/// The plugin window. Three tabs:
+/// The plugin window. Four tabs:
 ///  - Outfit sets: the game's named sets, plus (optionally) sets recovered from
 ///    item names, applied via Glamourer SetItem.
 ///  - Loose gear: wearable pieces that belong to no set at all, browsed by slot
 ///    as an icon grid with a large preview on hover, applied via Glamourer SetItem.
+///  - Weapons: every weapon, browsed by class in the same kind of grid. Your own
+///    class leads; the others can be previewed but only applied in GPose, because
+///    Glamourer won't take another class's weapon otherwise.
 ///  - NPCs: named human NPCs, applied via Glamourer ApplyState (their gear has
 ///    no item id, so it's whole-state application, not SetItem).
 ///
@@ -34,6 +37,7 @@ public sealed class MainWindow : Window, IDisposable
     private readonly NpcStateBuilder _npcState;
     private readonly GlamourerIpc _glam;
     private readonly MonikerIpc _moniker;
+    private readonly PlayerContext _player;
     private readonly ITextureProvider _textures;
     private readonly SlotIconService _slotIcons;
     private readonly IPluginLog _log;
@@ -49,9 +53,16 @@ public sealed class MainWindow : Window, IDisposable
     private IReadOnlyList<OutfitSet>? _mergedFromOfficial;
     private IReadOnlyList<OutfitSet>? _mergedFromGrouped;
 
+    // Loose gear and Weapons tabs: the piece a click queued for the next frame
+    private GearItem? _pendingGear;
+
     // Loose gear tab state
     private string _looseFilter = string.Empty;
-    private GearItem? _pendingLoose;
+
+    // Weapons tab state. Not saved: the tab always opens on the class you are playing, on the main hand.
+    private string _weaponFilter = string.Empty;
+    private uint _weaponClass;          // a class picked by hand; 0 follows the class you are on
+    private bool _weaponOffHand;
 
     // NPC tab state
     private string _npcFilter = string.Empty;
@@ -65,7 +76,7 @@ public sealed class MainWindow : Window, IDisposable
     private Vector4 _statusColor = new(0.7f, 0.7f, 0.7f, 1f);
 
     public MainWindow(OutfitService outfits, GearService gear, NpcService npcs, NpcStateBuilder npcState,
-        GlamourerIpc glam, MonikerIpc moniker, ITextureProvider textures, SlotIconService slotIcons,
+        GlamourerIpc glam, MonikerIpc moniker, PlayerContext player, ITextureProvider textures, SlotIconService slotIcons,
         IPluginLog log, Configuration config)
         : base("HOutfits###HOutfitsMain")
     {
@@ -75,6 +86,7 @@ public sealed class MainWindow : Window, IDisposable
         _npcState  = npcState;
         _glam      = glam;
         _moniker   = moniker;
+        _player    = player;
         _textures  = textures;
         _slotIcons = slotIcons;
         _log       = log;
@@ -118,6 +130,11 @@ public sealed class MainWindow : Window, IDisposable
             DrawLooseTab();
             ImGui.EndTabItem();
         }
+        if (ImGui.BeginTabItem("Weapons"))
+        {
+            DrawWeaponsTab();
+            ImGui.EndTabItem();
+        }
         if (ImGui.BeginTabItem("NPCs"))
         {
             DrawNpcTab();
@@ -130,7 +147,7 @@ public sealed class MainWindow : Window, IDisposable
     {
         if (_pendingSet is { } ps)          { _pendingSet = null;       DoApplySet(ps); }
         if (_pendingPiece is { } pp)        { _pendingPiece = null;     DoApplyPiece(pp); }
-        if (_pendingLoose is { } pl)        { _pendingLoose = null;     DoApplyLoose(pl); }
+        if (_pendingGear is { } pg)         { _pendingGear = null;      DoApplyGear(pg); }
         if (_pendingNpc is { } pn)          { _pendingNpc = null;       DoApplyNpc(pn); }
         if (_pendingNpcPiece is { } pnp)    { _pendingNpcPiece = null;  DoApplyNpcPiece(pnp.npc, pnp.piece); }
         if (_pendingRevert)                 { _pendingRevert = false;   DoRevert(); }
@@ -320,14 +337,25 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.EndTable();
     }
 
-    // ---- Loose gear tab -----------------------------------------------------------------------------------------------
+    // ---- Loose gear and Weapons tabs ----------------------------------------------------------------------------------
+    // Both are a row of chips above a wrapped grid of icon tiles with a large preview on hover, so they share the chip, grid,
+    // tile and preview code below.
 
-    private const float LooseTileSize = 40f;
-    private const float LooseTileGap  = 4f;
-    private const float PreviewSize   = 112f;
+    private const float TileSize    = 40f;
+    private const float TileGap     = 4f;
+    private const float PreviewSize = 112f;
 
-    // Index-aligned with GearSlot (Facewear is the last one).
-    private static readonly string[] LooseSlotLabels = { "Head", "Body", "Hands", "Legs", "Feet", "Ears", "Neck", "Wrists", "Ring", "Facewear" };
+    // Index-aligned with GearSlot.
+    private static readonly string[] SlotNames =
+        { "Head", "Body", "Hands", "Legs", "Feet", "Ears", "Neck", "Wrists", "Ring", "Facewear", "Main hand", "Off hand" };
+
+    /// <summary>One button in a chip row. A dimmed chip is greyed out but can still be clicked.</summary>
+    private readonly record struct Chip(string Label, string Id, bool Dimmed = false, string? Tooltip = null);
+
+    // The Loose gear chips: every slot up to and including Facewear (the two weapon slots belong to the Weapons tab).
+    private static readonly Chip[] LooseChips = Enumerable.Range(0, (int)GearSlot.Facewear + 1)
+        .Select(i => new Chip(SlotNames[i], $"looseslot{i}"))
+        .ToArray();
 
     private void DrawLooseTab()
     {
@@ -341,36 +369,200 @@ public sealed class MainWindow : Window, IDisposable
             return;
         }
 
-        var hide = _config.LooseHideDuplicateLooks;
-        var slot = Math.Clamp(_config.LooseSlot, 0, LooseSlotLabels.Length - 1);
-        DrawLooseSlotChips(ref slot);
+        var slot = Math.Clamp(_config.LooseSlot, 0, LooseChips.Length - 1);
+        var clicked = DrawChips(LooseChips, slot);
+        if (clicked >= 0)
+        {
+            slot = clicked;
+            _config.LooseSlot = clicked;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
 
+        DrawHideDuplicatesCheckbox(
+            "Many pieces are the same gear sold once per role (\"of Fending\", \"of Casting\", ...) and look identical.\n" +
+            "On shows one tile for each; hover it to see the variants. Off shows every item.");
+
+        var source = _config.LooseHideDuplicateLooks ? data.Looks[slot] : data.AllLooks[slot];
+        var filter = Normalize(_looseFilter);
+        var visible = Filtered(source, filter);
+        DrawMatchCount(visible.Count, filter);
+
+        DrawTileGrid("###loosegrid", visible, enabled: true, "Click to apply");
+    }
+
+    // ---- Weapons tab --------------------------------------------------------------------------------------------------
+
+    private void DrawWeaponsTab()
+    {
+        // The search box is the first row of every tab, so it sits at the same height on all of them.
+        DrawFilterBox("###weaponfilter", "Filter by weapon name", ref _weaponFilter);
+
+        var data = _gear.Data;
+        if (data is null)
+        {
+            ImGui.TextDisabled(_gear.Error ?? "Building the gear list...");
+            return;
+        }
+
+        var index = data.Weapons;
+        if (index.Classes.Count == 0)
+        {
+            ImGui.TextDisabled("Couldn't read the weapon list (see /xllog).");
+            return;
+        }
+
+        var active  = _player.ActiveJobId;
+        var inGpose = _player.InGpose;
+
+        // Your own class always leads (see WeaponIndex.ChipOrder), then the rest in the game's order.
+        var ids = index.ChipOrder(active);
+
+        // Outside GPose Glamourer only applies your own class's weapons, so the other chips are greyed out: you can still
+        // open them and browse, but their weapons are preview only.
+        var chips = new List<Chip>(ids.Count);
+        foreach (var id in ids)
+        {
+            var info = index.Info[id];
+            var mine = id == active;
+            chips.Add(new Chip(info.Abbreviation, $"weaponclass{id}",
+                Dimmed: !mine && !inGpose,
+                Tooltip: mine ? $"{info.Name} (your current class)"
+                    : inGpose ? info.Name
+                    : $"{info.Name}\nPreview only: outside GPose Glamourer applies just your current class's weapons."));
+        }
+
+        var selected = _weaponClass != 0 && ids.Contains(_weaponClass) ? _weaponClass : ids[0];
+        var clicked = DrawChips(chips, ids.IndexOf(selected), setApartFirst: ids[0] == active);
+        if (clicked >= 0)
+        {
+            selected = ids[clicked];
+            _weaponClass = selected == active ? 0u : selected;   // your own class is "follow me", so a job change keeps up
+        }
+
+        var canApply = inGpose || selected == active;
+        var weapons  = index.ByClass[selected];
+
+        // Off hands (shields, a crafter's second tool) only exist for some classes; the toggle only appears for those.
+        var hasOffHand = weapons.OffHand.Count > 0;
+        var offHand    = hasOffHand && _weaponOffHand;
+        if (hasOffHand)
+        {
+            if (ImGui.RadioButton("Main hand", !offHand)) { _weaponOffHand = false; offHand = false; }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Off hand", offHand)) { _weaponOffHand = true; offHand = true; }
+            ImGui.SameLine();
+        }
+
+        DrawHideDuplicatesCheckbox(
+            "Many weapons look exactly the same: an upgraded copy of one weapon, or one made for a class and again for its job.\n" +
+            "On shows one tile for each; hover it to see the others. Off shows every item.");
+
+        var hide   = _config.LooseHideDuplicateLooks;
+        var source = offHand ? (hide ? weapons.OffHand : weapons.AllOffHand) : (hide ? weapons.MainHand : weapons.AllMainHand);
+        var filter = Normalize(_weaponFilter);
+        var visible = Filtered(source, filter);
+        DrawMatchCount(visible.Count, filter);
+
+        if (!canApply)
+        {
+            ImGui.SameLine();
+            ImGui.AlignTextToFramePadding();
+            ImGui.TextColored(new Vector4(0.95f, 0.75f, 0.35f, 1f), "Preview only");
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Glamourer only applies the weapons of the class you are on, except in GPose.\nYou can still browse these.");
+        }
+
+        // One grid per class and hand, so switching chips starts at the top of that list instead of wherever the last one was scrolled.
+        DrawTileGrid($"###weaponsgrid_{selected}_{(offHand ? "off" : "main")}", visible, canApply, canApply
+            ? "Click to apply"
+            : "Preview only.\nOutside GPose Glamourer applies just\nyour current class's weapons.",
+            "Nothing matches for this class.");
+    }
+
+    // ---- Shared by both tabs ------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Single-select chips, reflowing onto further lines when the window is narrow. Returns the index of the chip clicked this
+    /// frame, or -1. <paramref name="setApartFirst"/> leaves a wider gap after the first chip (the class you are on).
+    /// </summary>
+    private static int DrawChips(IReadOnlyList<Chip> chips, int selected, bool setApartFirst = false)
+    {
+        var avail = ImGui.GetContentRegionAvail().X;
+        var x = 0f;
+        var clicked = -1;
+        for (var i = 0; i < chips.Count; i++)
+        {
+            var chip = chips[i];
+            var w = ImGui.CalcTextSize(chip.Label).X + ImGui.GetStyle().FramePadding.X * 2f;
+            if (i > 0)
+            {
+                var gap = i == 1 && setApartFirst ? 16f : 6f;
+                if (x + gap + w > avail) x = 0f;
+                else { ImGui.SameLine(0f, gap); x += gap; }
+            }
+
+            var on = selected == i;
+            if (on)
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.45f, 0.16f, 0.20f, 1f));
+            if (chip.Dimmed)
+                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5f);
+            if (ImGui.Button($"{chip.Label}###{chip.Id}"))
+                clicked = i;
+            if (chip.Dimmed)
+                ImGui.PopStyleVar();                 // before the tooltip, so that isn't dimmed too
+            if (on)
+                ImGui.PopStyleColor();
+            if (chip.Tooltip is not null && ImGui.IsItemHovered())
+                ImGui.SetTooltip(chip.Tooltip);
+            x += w;
+        }
+        return clicked;
+    }
+
+    /// <summary>
+    /// The "Hide duplicate looks" toggle both grid tabs share (one saved setting).
+    /// <paramref name="tooltip"/> says what a duplicate is on that tab.
+    /// </summary>
+    private void DrawHideDuplicatesCheckbox(string tooltip)
+    {
+        var hide = _config.LooseHideDuplicateLooks;
         if (ImGui.Checkbox("Hide duplicate looks", ref hide))
         {
             _config.LooseHideDuplicateLooks = hide;
             Plugin.PluginInterface.SavePluginConfig(_config);
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(
-                "Many pieces are the same gear sold once per role (\"of Fending\", \"of Casting\", ...) and look identical.\n" +
-                "On shows one tile for each; hover it to see the variants. Off shows every item.");
+            ImGui.SetTooltip(tooltip);
+    }
 
-        var source = hide ? data.Looks[slot] : data.AllLooks[slot];
-        var filter = _looseFilter.Trim().ToLowerInvariant();
-        var visible = filter.Length == 0
+    private static string Normalize(string text) => text.Trim().ToLowerInvariant();
+
+    private static IReadOnlyList<GearLook> Filtered(IReadOnlyList<GearLook> source, string filter)
+        => filter.Length == 0
             ? source
             : source.Where(l => l.SearchText.Contains(filter, StringComparison.Ordinal)).ToList();
 
-        // A count is only useful while a filter is narrowing the list, so it is shown only then, on the checkbox's row
-        // so the grid never shifts as you type.
-        if (filter.Length > 0)
-        {
-            ImGui.SameLine();
-            ImGui.AlignTextToFramePadding();
-            ImGui.TextDisabled(visible.Count == 1 ? "1 match" : $"{visible.Count} matches");
-        }
+    /// <summary>
+    /// A count is only useful while a filter is narrowing the list, so it is shown only then, on the options row so the grid
+    /// never shifts as you type.
+    /// </summary>
+    private static void DrawMatchCount(int count, string filter)
+    {
+        if (filter.Length == 0)
+            return;
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextDisabled(count == 1 ? "1 match" : $"{count} matches");
+    }
 
-        if (!ImGui.BeginChild("###loosegrid", new Vector2(0f, 0f)))
+    /// <summary>
+    /// The wrapped icon grid, clipped by row so only the visible tiles are ever drawn. With <paramref name="enabled"/> off the
+    /// tiles are dimmed and can't be clicked (they still preview on hover), and <paramref name="hint"/> is what that preview
+    /// says in place of "Click to apply". <paramref name="empty"/> is shown when there is nothing to list.
+    /// </summary>
+    private void DrawTileGrid(string id, IReadOnlyList<GearLook> visible, bool enabled, string hint, string empty = "Nothing matches.")
+    {
+        if (!ImGui.BeginChild(id, new Vector2(0f, 0f)))
         {
             ImGui.EndChild();
             return;
@@ -378,18 +570,17 @@ public sealed class MainWindow : Window, IDisposable
 
         if (visible.Count == 0)
         {
-            ImGui.TextDisabled("Nothing matches.");
+            ImGui.TextDisabled(empty);
         }
         else
         {
-            // Wrapped icon grid, clipped by row so only the visible tiles are ever drawn.
-            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(LooseTileGap, LooseTileGap));
+            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(TileGap, TileGap));
             var availX = ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ScrollbarSize;
-            var cols   = Math.Max(1, (int)((availX + LooseTileGap) / (LooseTileSize + LooseTileGap)));
+            var cols   = Math.Max(1, (int)((availX + TileGap) / (TileSize + TileGap)));
             var rows   = (visible.Count + cols - 1) / cols;
 
             var clipper = new ImGuiListClipper();
-            clipper.Begin(rows, LooseTileSize + LooseTileGap);
+            clipper.Begin(rows, TileSize + TileGap);
             while (clipper.Step())
             {
                 for (var r = clipper.DisplayStart; r < clipper.DisplayEnd; r++)
@@ -401,7 +592,7 @@ public sealed class MainWindow : Window, IDisposable
                             break;
                         if (c > 0)
                             ImGui.SameLine();
-                        DrawLooseTile(visible[idx]);
+                        DrawGearTile(visible[idx], enabled, hint);
                     }
                 }
             }
@@ -412,60 +603,35 @@ public sealed class MainWindow : Window, IDisposable
         ImGui.EndChild();
     }
 
-    /// <summary>Single-select slot chips, reflowing onto further lines when the window is narrow.</summary>
-    private void DrawLooseSlotChips(ref int slot)
-    {
-        var avail = ImGui.GetContentRegionAvail().X;
-        var x = 0f;
-        const float gap = 6f;
-        for (var i = 0; i < LooseSlotLabels.Length; i++)
-        {
-            var label = LooseSlotLabels[i];
-            var w = ImGui.CalcTextSize(label).X + ImGui.GetStyle().FramePadding.X * 2f;
-            if (i > 0)
-            {
-                if (x + gap + w > avail) x = 0f;
-                else { ImGui.SameLine(0f, gap); x += gap; }
-            }
-
-            var on = slot == i;
-            if (on)
-                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.45f, 0.16f, 0.20f, 1f));
-            if (ImGui.Button($"{label}###looseslot{i}"))
-            {
-                slot = i;
-                _config.LooseSlot = i;
-                Plugin.PluginInterface.SavePluginConfig(_config);
-            }
-            if (on)
-                ImGui.PopStyleColor();
-            x += w;
-        }
-    }
-
-    private void DrawLooseTile(GearLook look)
+    private void DrawGearTile(GearLook look, bool enabled, string hint)
     {
         var item = look.Representative;
-        var size = new Vector2(LooseTileSize);
+        var size = new Vector2(TileSize);
 
+        if (!enabled)
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.4f);
         if (_textures.TryGetFromGameIcon(new GameIconLookup(item.Icon), out var tex)
             && tex.TryGetWrap(out var wrap, out _))
             ImGui.Image(wrap.Handle, size);
         else
             ImGui.Dummy(size);
+        if (!enabled)
+            ImGui.PopStyleVar();
 
         var hovered = ImGui.IsItemHovered();
-        if (ImGui.IsItemClicked())
-            _pendingLoose = item;
+        if (enabled && ImGui.IsItemClicked())
+            _pendingGear = item;
         if (!hovered)
             return;
 
-        ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        // The rim marks the tile under the cursor: gold when a click will apply it, grey when it is preview only.
+        if (enabled)
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
         ImGui.GetWindowDrawList().AddRect(
             ImGui.GetItemRectMin(), ImGui.GetItemRectMax(),
-            ImGui.GetColorU32(new Vector4(0.95f, 0.85f, 0.45f, 1f)), 3f);
+            ImGui.GetColorU32(enabled ? new Vector4(0.95f, 0.85f, 0.45f, 1f) : new Vector4(0.6f, 0.6f, 0.62f, 1f)), 3f);
 
-        var detail = LooseSlotLabels[(int)item.Slot];
+        var detail = SlotNames[(int)item.Slot];
         if (item.Level > 0)
             detail += $"  |  Lv {item.Level}";          // facewear has no level
         if (item.JobText.Length > 0)
@@ -480,12 +646,12 @@ public sealed class MainWindow : Window, IDisposable
                 same.Add($"+{look.Variants.Count - 1 - same.Count} more");
         }
 
-        DrawPreviewTooltip(item.Icon, item.Name, detail, same, "Click to apply");
+        DrawPreviewTooltip(item.Icon, item.Name, detail, same, hint);
     }
 
     /// <summary>
-    /// The large preview shown on hover - the whole point of the Loose gear tab, since Glamourer itself only shows an
-    /// icon for the piece you already have selected. <paramref name="sameLook"/> lists other items sharing this look.
+    /// The large preview shown on hover - the whole point of the Loose gear and Weapons tabs, since Glamourer itself only
+    /// shows an icon for the piece you already have selected. <paramref name="sameLook"/> lists other items sharing this look.
     /// </summary>
     private void DrawPreviewTooltip(uint iconId, string title, string detail, IReadOnlyList<string>? sameLook, string hint)
     {
@@ -528,12 +694,21 @@ public sealed class MainWindow : Window, IDisposable
         _ => slot.ToString(),
     };
 
-    private void DoApplyLoose(GearItem item)
+    private void DoApplyGear(GearItem item)
     {
-        var ok = _gear.ApplyPiece(item, _glam, 0);
-        SetStatus(ok,
-            $"Applied \"{item.Name}\" ({LooseSlotLabels[(int)item.Slot]}).",
-            $"Couldn't apply \"{item.Name}\" ({LooseSlotLabels[(int)item.Slot]}), see /xllog.");
+        var slot = SlotNames[(int)item.Slot];
+        var ec = _gear.ApplyPiece(item, _glam, 0);
+        if (ec == GlamourerApiEc.Success)
+        {
+            SetStatus(true, $"Applied \"{item.Name}\" ({slot}).", string.Empty);
+            return;
+        }
+
+        // A weapon is the one thing Glamourer can turn down by rule (outside GPose it limits which ones it applies), so say so.
+        SetStatus(false, string.Empty,
+            !item.IsWeapon ? $"Couldn't apply \"{item.Name}\" ({slot}), see /xllog."
+            : ec == GlamourerApiEc.NothingDone ? $"\"{item.Name}\" changed nothing: you already wear it, or Glamourer won't take it."
+            : $"Glamourer turned down \"{item.Name}\" ({ec}); outside GPose it limits which weapons it applies.");
     }
 
     private void DrawNpcTab()
