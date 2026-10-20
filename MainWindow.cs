@@ -160,6 +160,11 @@ public sealed class MainWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Returns to game state (equipment, appearance, and any applied name).");
 
+        // "Large icons" shares the Revert button's row, to its right, so it is always in the same place and the status text
+        // that follows it never makes the header taller.
+        ImGui.SameLine();
+        DrawLargeIconsCheckbox();
+
         // The status rides on the button's row rather than getting a line of its own, so the header is always one line
         // tall: the tabs, and the search box under them, never shift when the first message appears.
         if (_status.Length > 0)
@@ -341,9 +346,12 @@ public sealed class MainWindow : Window, IDisposable
     // Both are a row of chips above a wrapped grid of icon tiles with a large preview on hover, so they share the chip, grid,
     // tile and preview code below.
 
-    private const float TileSize    = 40f;
-    private const float TileGap     = 4f;
-    private const float PreviewSize = 112f;
+    private const float TileGap = 4f;
+    // Tile + hover-preview size double with the header's "Large icons" tickbox; both grid tabs read it. Game icons are a
+    // fixed resolution, so the large size is upscaled (a little soft).
+    private float IconScale   => _config.LargeIcons ? 2f : 1f;
+    private float TileSize    => 40f  * IconScale;
+    private float PreviewSize => 112f * IconScale;
 
     // Index-aligned with GearSlot.
     private static readonly string[] SlotNames =
@@ -381,8 +389,14 @@ public sealed class MainWindow : Window, IDisposable
         DrawHideDuplicatesCheckbox(
             "Many pieces are the same gear sold once per role (\"of Fending\", \"of Casting\", ...) and look identical.\n" +
             "On shows one tile for each; hover it to see the variants. Off shows every item.");
+        ImGui.SameLine();
+        DrawIncludeSetItemsCheckbox();
 
-        var source = _config.LooseHideDuplicateLooks ? data.Looks[slot] : data.AllLooks[slot];
+        var dedup    = _config.LooseHideDuplicateLooks;
+        var withSets = _config.LooseIncludeSetItems;
+        var source   = withSets
+            ? (dedup ? data.LooksWithSets[slot] : data.AllLooksWithSets[slot])
+            : (dedup ? data.Looks[slot]         : data.AllLooks[slot]);
         var filter = Normalize(_looseFilter);
         var visible = Filtered(source, filter);
         DrawMatchCount(visible.Count, filter);
@@ -533,6 +547,45 @@ public sealed class MainWindow : Window, IDisposable
         }
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip(tooltip);
+    }
+
+    /// <summary>
+    /// Loose gear tab: "Include set items" merges pieces that belong to a set (the game's own and the name-grouped ones)
+    /// into the per-slot list, so one list and one search cover set and non-set gear together. Clicking a set piece still
+    /// applies just that piece; whole sets stay on the Outfit sets tab.
+    /// </summary>
+    private void DrawIncludeSetItemsCheckbox()
+    {
+        var include = _config.LooseIncludeSetItems;
+        if (ImGui.Checkbox("Include set items", ref include))
+        {
+            _config.LooseIncludeSetItems = include;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Also list pieces that belong to a set (the game's own and name-grouped), so one list per slot\n" +
+                "covers set and loose gear alike. Off shows only pieces that belong to no set.\n" +
+                "Clicking any piece applies just that piece; whole sets live on the Outfit sets tab.");
+    }
+
+    /// <summary>
+    /// The header's "Large icons" tickbox: the Loose gear and Weapons grids (tiles and hover preview) at twice the default
+    /// size, back to the default when unticked. It sits to the right of Revert changes, so it is in the same place on every
+    /// tab and never changes the header's height.
+    /// </summary>
+    private void DrawLargeIconsCheckbox()
+    {
+        var large = _config.LargeIcons;
+        if (ImGui.Checkbox("Large icons", ref large))
+        {
+            _config.LargeIcons = large;
+            Plugin.PluginInterface.SavePluginConfig(_config);
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip(
+                "Doubles the size of the gear icons and the hover preview on the Loose gear and Weapons tabs.\n" +
+                "Game icons are a fixed resolution, so the large size is a little soft.");
     }
 
     private static string Normalize(string text) => text.Trim().ToLowerInvariant();

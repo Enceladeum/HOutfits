@@ -23,6 +23,12 @@ public sealed class GearData
     /// <summary>The same loose pieces, one tile per item (when duplicate looks are not collapsed).</summary>
     public IReadOnlyList<GearLook>[] AllLooks { get; init; } = Array.Empty<IReadOnlyList<GearLook>>();
 
+    /// <summary>Like <see cref="Looks"/> but INCLUDING pieces that belong to a set (the game's own and the name-grouped ones), for the Loose gear tab's "Include set items" toggle. One tile per distinct look.</summary>
+    public IReadOnlyList<GearLook>[] LooksWithSets { get; init; } = Array.Empty<IReadOnlyList<GearLook>>();
+
+    /// <summary>Like <see cref="AllLooks"/> but INCLUDING set pieces; one tile per item.</summary>
+    public IReadOnlyList<GearLook>[] AllLooksWithSets { get; init; } = Array.Empty<IReadOnlyList<GearLook>>();
+
     public int LoosePieceCount { get; init; }
 
     /// <summary>Every weapon, by class or job, for the Weapons tab.</summary>
@@ -116,8 +122,9 @@ public sealed class GearService : IDisposable
                     if (id != 0) inSet.Add(id);
             }
 
-            var loose   = new List<GearItem>(16000);
-            var weapons = new List<GearItem>(9000);
+            var loose      = new List<GearItem>(16000);
+            var weapons    = new List<GearItem>(9000);
+            var setMembers = new List<GearItem>(4000);   // non-weapon pieces that belong to a game set; captured for the Loose tab's "Include set items" view
             foreach (var it in items)
             {
                 if (_disposed) return;
@@ -127,9 +134,6 @@ public sealed class GearService : IDisposable
                 var weaponSlot = WeaponSheets.WeaponSlotOf(category);
                 var slot       = weaponSlot ?? SlotOf(category);
                 if (slot is null) continue;
-                // A weapon is listed whether or not it is part of a set (the Outfit sets tab never shows weapons); other gear
-                // that is part of a set belongs to that tab.
-                if (weaponSlot is null && inSet.Contains(it.RowId)) continue;
                 var name = it.Name.ToString().Trim();
                 if (name.Length == 0) continue;
                 var job = it.ClassJobCategory.ValueNullable?.Name.ToString() ?? string.Empty;
@@ -147,7 +151,12 @@ public sealed class GearService : IDisposable
                 }
                 var piece = new GearItem(it.RowId, name, it.Icon, slot.Value, it.LevelEquip, it.ModelMain, job, english,
                     it.ModelSub, it.ClassJobCategory.RowId);
-                (weaponSlot is null ? loose : weapons).Add(piece);
+                // Weapons always go to the Weapons tab (set membership is irrelevant there). A non-weapon piece in a game set
+                // belongs to the Outfit sets tab, so it stays OUT of `loose` (grouping + default Loose view unchanged) but is
+                // kept in `setMembers` so the Loose tab's "Include set items" view can show it.
+                if (weaponSlot is not null) weapons.Add(piece);
+                else if (inSet.Contains(it.RowId)) setMembers.Add(piece);
+                else loose.Add(piece);
             }
 
             if (_disposed) return;
@@ -159,6 +168,10 @@ public sealed class GearService : IDisposable
             // Facewear never belongs to a set, so every entry is a loose tile.
             var facewear = ReadFacewear();
             var tiles    = singles.Concat(facewear).ToList();
+            // Everything wearable regardless of set membership: singles + name-grouped set members (both already in `loose`)
+            // + game-set members + facewear. Feeds the Loose tab's "Include set items" view, so one per-slot list/search
+            // covers set and non-set gear alike.
+            var allWearable = loose.Concat(setMembers).Concat(facewear).ToList();
 
             var asOutfits = grouped.Select(g => new OutfitSet(
                 GroupedRowIdBase + (uint)g.Id,
@@ -173,16 +186,18 @@ public sealed class GearService : IDisposable
             _result = new GearData
             {
                 GroupedSets     = asOutfits,
-                Looks           = GearGrouper.BuildLooks(tiles, dedupe: true).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
-                AllLooks        = GearGrouper.BuildLooks(tiles, dedupe: false).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
+                Looks            = GearGrouper.BuildLooks(tiles, dedupe: true).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
+                AllLooks         = GearGrouper.BuildLooks(tiles, dedupe: false).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
+                LooksWithSets    = GearGrouper.BuildLooks(allWearable, dedupe: true).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
+                AllLooksWithSets = GearGrouper.BuildLooks(allWearable, dedupe: false).Select(l => (IReadOnlyList<GearLook>)l).ToArray(),
                 LoosePieceCount = tiles.Count,
                 Weapons         = weaponIndex,
                 LocalizedClient = loose.Any(i => i.EnglishName is not null),
             };
 
             _log.Information(
-                "Gear scan: {Loose} loose wearable items -> {Sets} name-grouped sets ({Grouped} pieces) + {Singles} ungrouped pieces + {Face} facewear; {Weapons} weapons for {Classes} classes.",
-                loose.Count, asOutfits.Count, groupedId.Count, singles.Count, facewear.Count, weapons.Count, weaponIndex.Classes.Count);
+                "Gear scan: {Loose} loose wearable items -> {Sets} name-grouped sets ({Grouped} pieces) + {Singles} ungrouped pieces + {Face} facewear; {SetMembers} game-set pieces (for Include-set-items); {Weapons} weapons for {Classes} classes.",
+                loose.Count, asOutfits.Count, groupedId.Count, singles.Count, facewear.Count, setMembers.Count, weapons.Count, weaponIndex.Classes.Count);
         }
         catch (Exception ex)
         {

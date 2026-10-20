@@ -59,4 +59,20 @@ public sealed class Configuration : IPluginConfiguration
     /// such as "of Fending" / "of Casting") into one tile. On by default.
     /// </summary>
     public bool LooseHideDuplicateLooks { get; set; } = true;
+
+    /// <summary>
+    /// Loose gear tab: also list pieces that belong to a set (the game's own sets
+    /// and the name-grouped ones), so a single per-slot list and search covers both
+    /// set and non-set gear. Off by default, so the tab keeps showing only pieces
+    /// that belong to no set. Set pieces still live on the Outfit sets tab too.
+    /// </summary>
+    public bool LooseIncludeSetItems { get; set; } = false;
+
+    /// <summary>
+    /// Loose gear and Weapons tabs: draw the icon tiles and the hover preview at twice
+    /// the default size (80px tiles, 224px preview). Toggled by the "Large icons"
+    /// tickbox in the header; off is the default size. Game icons are a fixed
+    /// resolution, so the large size is upscaled (slightly soft).
+    /// </summary>
+    public bool LargeIcons { get; set; } = false;
 }

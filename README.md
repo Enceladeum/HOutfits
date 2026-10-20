@@ -32,6 +32,12 @@ Open with `/houtfits`, filter, and:
   Pieces that are the same gear sold once per role ("of Fending", "of Casting", ...)
   look identical, so **Hide duplicate looks** collapses them into one tile. A **Facewear**
   chip lists glasses and the like, which Glamourer treats as a slot of their own.
+  Tick **Include set items** to also list the pieces that belong to a set (the game's own
+  and the name-grouped ones), so one list and one search per slot cover everything;
+  clicking a piece still applies just that piece. The **Large icons** tickbox in the header,
+  next to Revert changes, doubles the tiles and the hover preview on this tab and the
+  Weapons tab (untick for the default size); game icons are a fixed resolution, so the
+  large size is a little soft.
 - **Weapons tab.** Every weapon, by class or job, in the same icon grid: hover for a large
   preview, click to apply. The class you are playing is always the first chip. The other
   classes are greyed out: you can open them and look, but Glamourer only applies the weapons
@@ -111,6 +117,9 @@ non-English clients they are listed after the game's own sets.
 **Loose gear.** The pieces left over after grouping, by slot. A slot is the one column of
 the item's `EquipSlotCategory` set to 1. Items whose slot, model and icon are identical
 are the same look; they collapse into one tile that applies the lowest-numbered variant.
+The pieces of the game's own sets are set aside by the scan (they belong to the Outfit sets
+tab) but kept, and **Include set items** merges them, together with the name-grouped pieces,
+back into the per-slot lists, which are indexed once more with the same look rules.
 
 Facewear isn't in the Item sheet. It comes from the `Glasses` sheet (one row per shape and
 colour; the row id is the id Glamourer knows it by) and is applied through Glamourer's
