@@ -5,6 +5,12 @@ Apply a complete FFXIV player character outfits or NPC appearances and gear set 
 each piece from Glamourer's dropdown: HOutfits applies the set through Glamourer. 
 Will write NPC names to your name plate on toggle if HMoniker is installed.
 
+
+<img width="730" height="777" alt="image" src="https://github.com/user-attachments/assets/d7b6a792-0911-4e98-8cc9-8421c9ff25e4" />
+
+<img width="730" height="777" alt="image" src="https://github.com/user-attachments/assets/66afdbb8-5335-41f8-ae8e-023fd07cba28" />
+
+
 Open with `/houtfits`, filter, and:
 
 - **Click a set name** → the whole set is applied to you.
