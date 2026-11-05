@@ -40,15 +40,30 @@ Open with `/houtfits`, filter, and:
   chip lists glasses and the like, which Glamourer treats as a slot of their own.
   Tick **Include set items** to also list the pieces that belong to a set (the game's own
   and the name-grouped ones), so one list and one search per slot cover everything;
-  clicking a piece still applies just that piece. The **Large icons** tickbox in the header,
-  next to Revert changes, doubles the tiles and the hover preview on this tab and the
-  Weapons tab (untick for the default size); game icons are a fixed resolution, so the
-  large size is a little soft.
+  clicking a piece still applies just that piece.
+- **Options row.** Each tab's tickboxes sit in one row between Revert changes and the tabs,
+  and the row changes with the tab you are on. **Large icons**, first in the row on every
+  tab, doubles the gear icons (and the Loose gear and Weapons hover preview); game icons
+  are a fixed resolution, so the large size is a little soft.
+- **Show variants.** Many gear models have colours no item uses, mostly worn by NPCs (Uwagi #55
+  has a purple variant 2 and a white variant 3). With **Show variants** on, a set that has them
+  gets an arrow on the Outfit sets tab that opens a row per variant, and a piece that has them
+  gets a **+n** badge on the Loose gear tab: click the badge or right-click the piece to open its
+  variants in a panel under its row. **Expand all** and **Collapse all** open or close every one.
+  Variants have no icon of their own, so they show their item's icon faded, with the variant
+  number in the corner. Variants that would draw broken (no material for that slot) are left out.
 - **Weapons tab.** Every weapon, by class or job, in the same icon grid: hover for a large
   preview, click to apply. The class you are playing is always the first chip. The other
   classes are greyed out: you can open them and look, but Glamourer only applies the weapons
   of the class you are on, so they are preview only until you are in GPose, where every class
   is available. Shields and a crafter's second tool are under **Off hand**.
+- **NPCs tab.** Every named human NPC, with their gear. A piece that is a player item shows that
+  item's icon; gear no item uses shows the slot's outline. **Show model IDs** (on by default) writes
+  each piece's model number (e.g. 9055-3) under it. Hover a piece to see who else wears it; a gold
+  dot marks a piece no other NPC wears, and right-clicking a piece searches for every NPC who wears
+  it (you can also type a model number into the search). NPCs that share a face are grouped under one
+  row, because the game names one character inconsistently (Nero, Nero tol Scaeva, Iron Nero);
+  open the group to see each look, with the pieces that set a look apart outlined.
 
 **Scope:** armour, accessories, facewear and weapons. Complete sets (the game's own and the
 ones recovered by name) apply in one click; anything that belongs to no set is on the
@@ -217,7 +232,9 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
 - `WeaponIndex.cs`, `WeaponSheets.cs`: the Weapons tab's per-class lists (the first has no
   game types at all, the second only Lumina's, so both can be checked against the real sheets
   in a console app). `PlayerContext.cs`: your current class and whether you are in GPose.
-- `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab.
+- `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab. `NpcLook.cs`: the item
+  behind each NPC piece, who wears each look, and what a body piece hides (the game's EQP table).
+- `VariantIndex.cs`: the model variants no item uses, read from each model's IMC file.
 - `GlamourerIpc.cs`, `MonikerIpc.cs` — the IPC wrappers.
 - `MainWindow.cs` — the tabbed table/grid UI.
 - `SlotIconService.cs` — generic slot silhouettes for NPC pieces.

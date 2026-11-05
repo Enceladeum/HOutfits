@@ -13,15 +13,19 @@ namespace HOutfits;
 /// that isn't in the game's own list but was recovered by matching item names
 /// (see <see cref="GearGrouper"/>); it lists and applies exactly like a real one.
 /// </summary>
+/// <param name="Variant">0 for a set as the game (or the name grouping) has it; otherwise this is that set in one of its
+/// models' unlisted variants (see <see cref="VariantIndex"/>), and every piece is applied by model.</param>
 public sealed record OutfitSet(
     uint RowId,
     string Name,
     uint Icon,
     IReadOnlyList<OutfitPiece> Pieces,
     string SearchText,
-    bool Grouped = false);
+    bool Grouped = false,
+    byte Variant = 0);
 
-public sealed record OutfitPiece(uint ItemId, string Name, uint Icon, ApiEquipSlot Slot);
+/// <param name="Model">The item's ModelMain. A piece with <paramref name="ItemId"/> 0 has no item and is applied by this model.</param>
+public sealed record OutfitPiece(uint ItemId, string Name, uint Icon, ApiEquipSlot Slot, ulong Model = 0);
 
 /// <summary>
 /// Builds the outfit list from the MirageStoreSetItem sheet and applies a set
@@ -140,7 +144,7 @@ public sealed class OutfitService
         if (item.RowId == 0)
             return;
 
-        pieces.Add(new OutfitPiece(item.RowId, item.Name.ToString(), item.Icon, slot));
+        pieces.Add(new OutfitPiece(item.RowId, item.Name.ToString(), item.Icon, slot, item.ModelMain));
     }
 
     /// <summary>

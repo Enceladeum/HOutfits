@@ -75,4 +75,17 @@ public sealed class Configuration : IPluginConfiguration
     /// resolution, so the large size is upscaled (slightly soft).
     /// </summary>
     public bool LargeIcons { get; set; } = false;
+
+    /// <summary>
+    /// Outfit sets and Loose gear tabs: also list the model variants no item uses
+    /// (the NPC-only colours of player gear), next to the set or piece they are a
+    /// variant of. Off by default.
+    /// </summary>
+    public bool ShowVariants { get; set; } = false;
+
+    /// <summary>
+    /// NPCs tab: write each piece's full model number (e.g. 9055-3) under its
+    /// icon. On by default; off, pieces with no item show just their variant.
+    /// </summary>
+    public bool NpcShowModelIds { get; set; } = true;
 }

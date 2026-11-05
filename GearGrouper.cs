@@ -18,10 +18,15 @@ public enum GearSlot { Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, Ring, 
 /// grouping rules read only the English one (<see cref="GroupName"/>), so they find the same sets on every client language.
 /// For a weapon, <paramref name="ModelSub"/> is its second model (the other hand, the arrow, the off-blade) which is part of
 /// how it looks, and <paramref name="JobCategory"/> is its ClassJobCategory row id, i.e. which classes can use it.
+/// <paramref name="ModelOnly"/> marks a model variant no item uses (see <see cref="VariantIndex"/>): it has no item id, borrows
+/// the icon of the item it is a variant of, and is applied by its model.
 /// </summary>
 public sealed record GearItem(uint ItemId, string Name, uint Icon, GearSlot Slot, byte Level, ulong Model, string JobText,
-    string? EnglishName = null, ulong ModelSub = 0, uint JobCategory = 0)
+    string? EnglishName = null, ulong ModelSub = 0, uint JobCategory = 0, bool ModelOnly = false)
 {
+    /// <summary>The model's variant (bits 16 to 31 of <c>Item.ModelMain</c> for armour and accessories).</summary>
+    public byte ModelVariant => (byte)((Model >> 16) & 0xFFFF);
+
     /// <summary>The name the grouping rules read: English wherever it is known.</summary>
     public string GroupName => string.IsNullOrEmpty(EnglishName) ? Name : EnglishName;
 
@@ -56,6 +61,10 @@ public sealed class GearLook
     public GearItem Representative { get; init; } = null!;
     public IReadOnlyList<GearItem> Variants { get; init; } = Array.Empty<GearItem>();
     public string SearchText { get; init; } = "";
+
+    /// <summary>With "Show variants", a short corner label: "+2" on a piece with unlisted variants (click it to expand them),
+    /// "v3" on a variant tile.</summary>
+    public string? Badge { get; init; }
 }
 
 /// <summary>

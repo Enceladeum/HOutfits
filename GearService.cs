@@ -40,6 +40,12 @@ public sealed class GearData
     /// rather than interleaving English labels among localized names.
     /// </summary>
     public bool LocalizedClient { get; init; }
+
+    /// <summary>Model variants no item uses, for the "Show variants" toggle on the Outfit sets and Loose gear tabs.</summary>
+    public VariantIndex Variants { get; init; } = VariantIndex.Empty;
+
+    /// <summary>The item behind each model and variant, so the NPC tab can show real icons for NPC gear that is an item.</summary>
+    public ModelItems Items { get; init; } = ModelItems.Empty;
 }
 
 /// <summary>
@@ -177,11 +183,13 @@ public sealed class GearService : IDisposable
                 GroupedRowIdBase + (uint)g.Id,
                 g.Name,
                 g.Icon,
-                g.Items.Select(i => new OutfitPiece(i.ItemId, i.Name, i.Icon, ToApi(i.Slot))).ToList(),
+                g.Items.Select(i => new OutfitPiece(i.ItemId, i.Name, i.Icon, ToApi(i.Slot), i.Model)).ToList(),
                 g.SearchText,
                 Grouped: true)).ToList();
 
             var weaponIndex = ReadWeaponIndex(weapons);
+            var variants    = ReadVariants(loose.Concat(setMembers));
+            if (_disposed) return;
 
             _result = new GearData
             {
@@ -193,6 +201,8 @@ public sealed class GearService : IDisposable
                 LoosePieceCount = tiles.Count,
                 Weapons         = weaponIndex,
                 LocalizedClient = loose.Any(i => i.EnglishName is not null),
+                Variants        = variants,
+                Items           = ModelItems.Build(loose.Concat(setMembers).Concat(weapons)),
             };
 
             _log.Information(
@@ -230,6 +240,26 @@ public sealed class GearService : IDisposable
         {
             _log.Warning(ex, "Couldn't sort the weapons by class; the Weapons tab will be empty.");
             return new WeaponIndex();
+        }
+    }
+
+    /// <summary>
+    /// Finds the model variants no item uses. A failure here costs only the "Show variants" toggle (it then finds nothing)
+    /// rather than the whole scan.
+    /// </summary>
+    private VariantIndex ReadVariants(IEnumerable<GearItem> wearable)
+    {
+        try
+        {
+            var watch    = System.Diagnostics.Stopwatch.StartNew();
+            var variants = VariantIndex.Build(_data, wearable, () => _disposed);
+            _log.Information("Variant scan: {Models} models have unlisted variants ({Ms} ms).", variants.ModelCount, watch.ElapsedMilliseconds);
+            return variants;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Couldn't read the model variants; Show variants will find none.");
+            return VariantIndex.Empty;
         }
     }
 

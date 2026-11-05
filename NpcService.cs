@@ -237,9 +237,12 @@ public sealed class NpcService
         var clanName = ResolveTribe(tribeSheet, tribeId, isFemale);
 
         // Search haystack: name + race + clan + the NPC id (so an exact id search
-        // pinpoints a specific entry among same-named NPCs).
+        // pinpoints a specific entry among same-named NPCs) + each piece's model
+        // ("9055-3"), so a model search lists every NPC who wears it.
         var sb = new StringBuilder(name).Append('\n').Append(raceName).Append('\n')
             .Append(clanName).Append('\n').Append(rowId);
+        foreach (var piece in pieces)
+            sb.Append('\n').Append(piece.Label);
         var search = sb.ToString().ToLowerInvariant();
 
         return new NpcEntry(rowId, name, raceName, clanName, isFemale, pieces, customize, search);

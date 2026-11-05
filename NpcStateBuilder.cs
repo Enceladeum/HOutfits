@@ -180,6 +180,30 @@ public sealed class NpcStateBuilder
         return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
     }
 
+    /// <summary>
+    /// Apply armour or accessories that have no item (model variants, see <see cref="VariantIndex"/>) through one ApplyState,
+    /// changing only those slots. Each slot gets the CustomItemId of its model and variant; its dyes are left as they are.
+    /// </summary>
+    public GlamourerApiEc? ApplyModels(IEnumerable<(ApiEquipSlot Slot, ulong Model)> pieces)
+    {
+        var state = _glam.GetState(0);
+        if (state is null || state["Equipment"] is not JObject equip)
+            return null;
+
+        foreach (var (slot, model) in pieces)
+        {
+            if (!SlotKey.TryGetValue(slot, out var key) || equip[key] is not JObject entry)
+                continue;
+            entry["ItemId"] = (model & 0xFFFF)                    // set
+                            | (((model >> 16) & 0xFF) << 32)       // variant (bits 16 to 31 of ModelMain)
+                            | (EquipTypeFor(slot) << 40)
+                            | CustomFlag;
+            entry["Apply"] = true;
+        }
+
+        return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
+    }
+
     /// <summary>The two weapon (hand) slots. Mirrored by MainWindow's dimming logic.</summary>
     public static bool IsWeapon(ApiEquipSlot slot)
         => slot is ApiEquipSlot.MainHand or ApiEquipSlot.OffHand;
