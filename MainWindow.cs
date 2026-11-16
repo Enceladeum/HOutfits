@@ -131,9 +131,11 @@ public sealed partial class MainWindow : Window, IDisposable
         MarkTestBuild(ref testBuild);
         var version = typeof(MainWindow).Assembly.GetName().Version?.ToString(3) ?? "?";
         WindowName = $"HOutfits v{version}{(testBuild ? " (test build)" : "")}###HOutfitsMain";
+
+        InitWeaponOverride();
     }
 
-    public void Dispose() { }
+    public void Dispose() => DisposeWeaponOverride();
 
     public override void Draw()
     {
@@ -1332,9 +1334,7 @@ public sealed partial class MainWindow : Window, IDisposable
             : $"Glamourer turned down \"{item.Name}\" ({ec}); outside GPose it limits which weapons it applies.");
     }
 
-    // Extension points for an optional local build; with no implementation the compiler removes these calls.
-    partial void DrawWeaponOverride(ref bool canApply);
-    partial void TryApplyWeaponOverride(GearItem item, ref bool handled);
+    // Extension point for a local build (marks the title as a test build); with no implementation the compiler removes the call.
     partial void MarkTestBuild(ref bool testBuild);
 
     private void DrawNpcTab()

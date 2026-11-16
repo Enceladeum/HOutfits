@@ -57,6 +57,13 @@ Open with `/houtfits`, filter, and:
   classes are greyed out: you can open them and look, but Glamourer only applies the weapons
   of the class you are on, so they are preview only until you are in GPose, where every class
   is available. Shields and a crafter's second tool are under **Off hand**.
+  **Override** (next to the match count, outside GPose) lets you put another class's weapon in
+  your hands anyway: it loads the weapon straight onto your character with the game's own
+  weapon loader, skipping Glamourer for that slot. Only what is drawn changes; your character's
+  real weapon is untouched and the server sees nothing different, so **Restore** (or changing
+  class, or unticking Override) puts your class weapon back. Some animations may look wrong
+  with a weapon your class doesn't use. In an [HMapSync](https://github.com/Enceladeum/HMapSync)
+  session (1.0.9.0 or later), the others see the override too.
 - **NPCs tab.** Every named human NPC, with their gear. A piece that is a player item shows that
   item's icon; gear no item uses shows the slot's outline. **Show model IDs** (on by default) writes
   each piece's model number (e.g. 9055-3) under it. Hover a piece to see who else wears it; a gold
@@ -157,9 +164,16 @@ second model (the other dagger, the arrow) is part of how it looks. The chips fo
 game's own class order. A base class such as Gladiator gets no chip of its own while its job
 (Paladin) covers it, unless it is the class you are on, in which case it leads. Your class
 comes from `IPlayerState` and GPose from `IClientState`, both read each frame, so changing
-job or entering GPose is reflected at once. HOutfits does not try to get around Glamourer's
-rule that, outside GPose, only your own class's weapons can be applied: it greys the others
-out and leaves it there. If Glamourer still turns a weapon down, the status line says so.
+job or entering GPose is reflected at once. Through Glamourer, outside GPose, only your own
+class's weapons can be applied, so the other classes are greyed out; if Glamourer still turns
+a weapon down, the status line says so. **Override** is the exception and does not go through
+Glamourer: it calls the game's `DrawDataContainer.LoadWeapon` on your character with
+`skipGameObject` set, so only the drawn weapon changes and the stored one can be reloaded. While
+an override is on, a redraw (which reloads the stored weapon) is followed by drawing the
+override again once the rebuilt weapon has settled. The override is published read-only over
+IPC (`HOutfits.WeaponOverride.ApiVersion` returns `(1, 0)`; `HOutfits.WeaponOverride.Get`
+returns the main- and off-hand weapon model values, `(0, 0)` when none), which is how
+HMapSync shows it to session peers.
 
 **Apply behaviour.** `GlamourerIpc.ApplyItem` calls Glamourer's `SetItem` with
 `ApplyFlag.Equipment`, no `Once`, `key = 0`. Verified against Glamourer's source:
