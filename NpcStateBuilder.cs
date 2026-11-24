@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Plugin.Services;
 using Glamourer.Api.Enums;
 using Newtonsoft.Json.Linq;
@@ -204,6 +205,98 @@ public sealed class NpcStateBuilder
         return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
     }
 
+    // The Faces tab's two sets of customize keys. "Face" is the face's shape: the face itself and the features drawn on or
+    // shaped with it. "Full head" adds hair, eye and lip colours, tattoo colour and face paint. Skin colour, height and the
+    // body stay yours either way.
+    public static readonly HashSet<string> FaceKeys = new()
+    {
+        "Face", "FacialFeature1", "FacialFeature2", "FacialFeature3", "FacialFeature4", "FacialFeature5", "FacialFeature6",
+        "FacialFeature7", "LegacyTattoo", "Eyebrows", "EyeShape", "SmallIris", "Nose", "Jaw", "Mouth",
+    };
+
+    public static readonly HashSet<string> HeadKeys = new(FaceKeys)
+    {
+        "Hairstyle", "Highlights", "HairColor", "HighlightsColor", "EyeColorRight", "EyeColorLeft", "TattooColor", "Lipstick",
+        "LipColor", "FacePaint", "FacePaintReversed", "FacePaintColor",
+    };
+
+    /// <summary>The customize keys one part of the Parts view writes.</summary>
+    public static IReadOnlySet<string> PartKeys(PartKind kind) => kind switch
+    {
+        PartKind.Eyebrows       => new HashSet<string> { "Eyebrows" },
+        PartKind.EyeShape       => new HashSet<string> { "EyeShape", "SmallIris" },
+        PartKind.Nose           => new HashSet<string> { "Nose" },
+        PartKind.Jaw            => new HashSet<string> { "Jaw" },
+        PartKind.Mouth          => new HashSet<string> { "Mouth" },
+        PartKind.FacialFeatures => new HashSet<string>
+        {
+            "FacialFeature1", "FacialFeature2", "FacialFeature3", "FacialFeature4", "FacialFeature5", "FacialFeature6",
+            "FacialFeature7", "LegacyTattoo",
+        },
+        _                       => new HashSet<string> { "FacePaint", "FacePaintReversed", "FacePaintColor" },
+    };
+
+    /// <summary>Put an NPC's face (or, with <paramref name="fullHead"/>, its whole head) on the local player.</summary>
+    public GlamourerApiEc? ApplyFace(NpcEntry npc, bool fullHead)
+        => ApplyCustomize(npc, fullHead ? HeadKeys : FaceKeys);
+
+    /// <summary>
+    /// Copy only the given customize keys from an NPC onto the local player, leaving everything else as it is. Glamourer takes
+    /// values its own menus don't list: a state pushed over IPC is loaded with unknown values allowed. The caller checks the
+    /// values fit the body first (see <see cref="FaceIndex"/>).
+    /// </summary>
+    public GlamourerApiEc? ApplyCustomize(NpcEntry npc, IReadOnlySet<string> keys)
+    {
+        var state = _glam.GetState(0);
+        if (state is null || state["Customize"] is not JObject cust)
+        {
+            _log.Warning("Face apply: no Customize block in Glamourer's state (state {State}; keys: {Keys}).",
+                state is null ? "null" : "read", state is null ? "-" : string.Join(", ", state.Properties().Select(p => p.Name)));
+            return null;
+        }
+
+        WriteCustomize(cust, npc, keys);
+        return _glam.ApplyState(state, 0, ApplyFlag.Customization);
+    }
+
+    /// <summary>
+    /// The local player's 26 customize bytes as Glamourer has them now, or null when no character is loaded. Glamourer's state
+    /// first: it is what Glamourer shows and what ApplyState writes into, and it follows a race or sex change made in Glamourer.
+    /// The character's own customize data is the fallback; it does NOT follow such a change (seen in game), so it can be stale.
+    /// Bytes: 0 race, 1 sex, 4 clan, 5 face.
+    /// </summary>
+    public byte[]? CurrentCustomize()
+    {
+        if (_glam.GetState(0)?["Customize"] is JObject cust)
+        {
+            try
+            {
+                var c = new byte[26];
+                foreach (var (key, byteIdx, mask) in CustomizeMap)
+                    if (cust[key]?["Value"] is JValue v)
+                        c[byteIdx] |= (byte)((byte)v & mask);   // masked values OR back into their shared byte
+                if (c[0] != 0)
+                    return c;
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(ex, "Couldn't read customize from Glamourer's state; using the character's own.");
+            }
+        }
+
+        try
+        {
+            if (Plugin.ObjectTable.LocalPlayer is not { } player)
+                return null;
+            var c = player.Customize;
+            return c.Length >= 26 && c[0] != 0 ? c[..26].ToArray() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>The two weapon (hand) slots. Mirrored by MainWindow's dimming logic.</summary>
     public static bool IsWeapon(ApiEquipSlot slot)
         => slot is ApiEquipSlot.MainHand or ApiEquipSlot.OffHand;
@@ -299,11 +392,13 @@ public sealed class NpcStateBuilder
         slot["ApplyStain"] = true;
     }
 
-    private static void WriteCustomize(JObject cust, NpcEntry npc)
+    private static void WriteCustomize(JObject cust, NpcEntry npc, IReadOnlySet<string>? only = null)
     {
         var c = npc.Customize;
         foreach (var (key, byteIdx, mask) in CustomizeMap)
         {
+            if (only is not null && !only.Contains(key))
+                continue;
             if (byteIdx >= c.Length)
                 continue;
             if (cust[key] is not JObject field)

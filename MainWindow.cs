@@ -11,7 +11,7 @@ using Glamourer.Api.Enums;
 namespace HOutfits;
 
 /// <summary>
-/// The plugin window. Four tabs:
+/// The plugin window. Five tabs:
 ///  - Outfit sets: the game's named sets, plus (optionally) sets recovered from
 ///    item names, applied via Glamourer SetItem.
 ///  - Loose gear: wearable pieces that belong to no set at all, browsed by slot
@@ -21,6 +21,8 @@ namespace HOutfits;
 ///    Glamourer won't take another class's weapon otherwise.
 ///  - NPCs: named human NPCs, applied via Glamourer ApplyState (their gear has
 ///    no item id, so it's whole-state application, not SetItem).
+///  - Faces: the faces only NPCs have, put on you through ApplyState (see
+///    MainWindow.Faces.cs).
 ///
 /// The set-based tabs carry their own "Include accessories" toggle (bound to the
 /// same setting, shown in-context beside each tab's other options) and all tabs
@@ -183,6 +185,12 @@ public sealed partial class MainWindow : Window, IDisposable
             DrawNpcTab();
             ImGui.EndTabItem();
         }
+        if (ImGui.BeginTabItem("Faces"))
+        {
+            _activeTab = Tab.Faces;
+            DrawFacesTab();
+            ImGui.EndTabItem();
+        }
         ImGui.EndTabBar();
     }
 
@@ -193,6 +201,7 @@ public sealed partial class MainWindow : Window, IDisposable
         if (_pendingGear is { } pg)         { _pendingGear = null;      DoApplyGear(pg); }
         if (_pendingNpc is { } pn)          { _pendingNpc = null;       DoApplyNpc(pn); }
         if (_pendingNpcPiece is { } pnp)    { _pendingNpcPiece = null;  DoApplyNpcPiece(pnp.npc, pnp.piece); }
+        if (_pendingFace is { } pf)         { _pendingFace = null;      DoApplyFace(pf.Npc, pf.Keys, pf.What); }
         if (_pendingRevert)                 { _pendingRevert = false;   DoRevert(); }
     }
 
@@ -215,7 +224,7 @@ public sealed partial class MainWindow : Window, IDisposable
         }
     }
 
-    private enum Tab { Sets, Loose, Weapons, Npcs }
+    private enum Tab { Sets, Loose, Weapons, Npcs, Faces }
 
     /// <summary>
     /// The options row, between the header and the tabs: "Large icons" (every tab) and then the toggles of the tab that is
@@ -261,6 +270,10 @@ public sealed partial class MainWindow : Window, IDisposable
 
             case Tab.Npcs:
                 DrawNpcOptions();
+                break;
+
+            case Tab.Faces:
+                DrawFacesOptions();
                 break;
         }
 

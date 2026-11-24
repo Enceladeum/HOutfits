@@ -71,6 +71,17 @@ Open with `/houtfits`, filter, and:
   it (you can also type a model number into the search). NPCs that share a face are grouped under one
   row, because the game names one character inconsistently (Nero, Nero tol Scaeva, Iron Nero);
   open the group to see each look, with the pieces that set a look apart outlined.
+- **Faces tab.** The faces only NPCs have (Hythlodaeus's, 2B's and many more), which Glamourer's
+  own face menu doesn't offer. **Looks** lists each distinct look: a face number together with the
+  eyebrows, eyes, nose, jaw, mouth and facial features that shape it, named after the characters who
+  wear it. A face number with several looks is a row you open. A face only exists for one body (race
+  and sex, and for Hyur the clan too), so the faces for your current body come first. The rest are
+  dimmed but can still be tried: some work on another body, others come out invisible (Revert
+  changes undoes it). **Full head** also copies the NPC's hair, eye and lip colours, tattoo colour and face paint;
+  off, only the face changes. **Parts** works on the face you have now: it lists the eyebrows, eyes,
+  nose, jaw, mouth and facial features NPCs with the same face wear, and face paint from any NPC with
+  your body, so you can change one part at a time. Values character creation doesn't offer are shown
+  in gold. Your skin colour, height and body always stay yours.
 
 **Scope:** armour, accessories, facewear and weapons. Complete sets (the game's own and the
 ones recovered by name) apply in one click; anything that belongs to no set is on the
@@ -248,6 +259,8 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
   in a console app). `PlayerContext.cs`: your current class and whether you are in GPose.
 - `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab. `NpcLook.cs`: the item
   behind each NPC piece, who wears each look, and what a body piece hides (the game's EQP table).
+- `FaceIndex.cs`, `MainWindow.Faces.cs`: the Faces tab (the first has no game or Dalamud types).
+  `CreationLimits.cs`: how many choices character creation offers per face part, for the gold marks.
 - `VariantIndex.cs`: the model variants no item uses, read from each model's IMC file.
 - `GlamourerIpc.cs`, `MonikerIpc.cs` — the IPC wrappers.
 - `MainWindow.cs` — the tabbed table/grid UI.

@@ -88,4 +88,10 @@ public sealed class Configuration : IPluginConfiguration
     /// icon. On by default; off, pieces with no item show just their variant.
     /// </summary>
     public bool NpcShowModelIds { get; set; } = true;
+
+    /// <summary>
+    /// Faces tab: copy the NPC's whole head (the face plus hair, eye and lip colours, tattoo colour and face paint) instead of
+    /// the face alone. Off by default.
+    /// </summary>
+    public bool FacesFullHead { get; set; } = false;
 }
