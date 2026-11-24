@@ -34,6 +34,12 @@ public sealed class NpcStateBuilder
     private readonly GlamourerIpc _glam;
     private readonly IPluginLog _log;
 
+    /// <summary>
+    /// The object index every state is read from and applied to: 0 = you, otherwise the dressing target (see
+    /// MainWindow.Target.cs), which the window sets when the target changes.
+    /// </summary>
+    public int Target { get; set; }
+
     public NpcStateBuilder(GlamourerIpc glam, IPluginLog log)
     {
         _glam = glam;
@@ -132,10 +138,10 @@ public sealed class NpcStateBuilder
     /// </summary>
     public GlamourerApiEc? Apply(NpcEntry npc, Mode mode, bool includeAccessories, bool includeWeapons)
     {
-        var state = _glam.GetState(0);
+        var state = _glam.GetState(Target);
         if (state is null)
         {
-            _log.Warning("NPC apply: GetState(0) returned null (no character loaded?).");
+            _log.Warning("NPC apply: GetState({Index}) returned null (no character there?).", Target);
             return null;
         }
 
@@ -159,13 +165,13 @@ public sealed class NpcStateBuilder
             _                   => ApplyFlag.Equipment | ApplyFlag.Customization,
         };
 
-        return _glam.ApplyState(state, 0, flags);
+        return _glam.ApplyState(state, Target, flags);
     }
 
     /// <summary>Apply a single NPC gear piece (additive), via ApplyState with only that slot changed.</summary>
     public GlamourerApiEc? ApplyPiece(NpcEntry npc, NpcPiece piece)
     {
-        var state = _glam.GetState(0);
+        var state = _glam.GetState(Target);
         if (state is null)
             return null;
 
@@ -178,7 +184,7 @@ public sealed class NpcStateBuilder
                     piece.Slot, CustomItemId(piece), EquipTypeFor(piece.Slot));
         }
 
-        return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
+        return _glam.ApplyState(state, Target, ApplyFlag.Equipment);
     }
 
     /// <summary>
@@ -187,7 +193,7 @@ public sealed class NpcStateBuilder
     /// </summary>
     public GlamourerApiEc? ApplyModels(IEnumerable<(ApiEquipSlot Slot, ulong Model)> pieces)
     {
-        var state = _glam.GetState(0);
+        var state = _glam.GetState(Target);
         if (state is null || state["Equipment"] is not JObject equip)
             return null;
 
@@ -202,7 +208,7 @@ public sealed class NpcStateBuilder
             entry["Apply"] = true;
         }
 
-        return _glam.ApplyState(state, 0, ApplyFlag.Equipment);
+        return _glam.ApplyState(state, Target, ApplyFlag.Equipment);
     }
 
     // The Faces tab's two sets of customize keys. "Face" is the face's shape: the face itself and the features drawn on or
@@ -247,7 +253,7 @@ public sealed class NpcStateBuilder
     /// </summary>
     public GlamourerApiEc? ApplyCustomize(NpcEntry npc, IReadOnlySet<string> keys)
     {
-        var state = _glam.GetState(0);
+        var state = _glam.GetState(Target);
         if (state is null || state["Customize"] is not JObject cust)
         {
             _log.Warning("Face apply: no Customize block in Glamourer's state (state {State}; keys: {Keys}).",
@@ -256,18 +262,18 @@ public sealed class NpcStateBuilder
         }
 
         WriteCustomize(cust, npc, keys);
-        return _glam.ApplyState(state, 0, ApplyFlag.Customization);
+        return _glam.ApplyState(state, Target, ApplyFlag.Customization);
     }
 
     /// <summary>
-    /// The local player's 26 customize bytes as Glamourer has them now, or null when no character is loaded. Glamourer's state
+    /// The 26 customize bytes of the actor being dressed (you, or the target) as Glamourer has them now, or null when no character is loaded. Glamourer's state
     /// first: it is what Glamourer shows and what ApplyState writes into, and it follows a race or sex change made in Glamourer.
     /// The character's own customize data is the fallback; it does NOT follow such a change (seen in game), so it can be stale.
     /// Bytes: 0 race, 1 sex, 4 clan, 5 face.
     /// </summary>
     public byte[]? CurrentCustomize()
     {
-        if (_glam.GetState(0)?["Customize"] is JObject cust)
+        if (_glam.GetState(Target)?["Customize"] is JObject cust)
         {
             try
             {
@@ -286,7 +292,7 @@ public sealed class NpcStateBuilder
 
         try
         {
-            if (Plugin.ObjectTable.LocalPlayer is not { } player)
+            if (Plugin.ObjectTable[Target] is not Dalamud.Game.ClientState.Objects.Types.ICharacter player)
                 return null;
             var c = player.Customize;
             return c.Length >= 26 && c[0] != 0 ? c[..26].ToArray() : null;

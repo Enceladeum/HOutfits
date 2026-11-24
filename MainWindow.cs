@@ -135,9 +135,14 @@ public sealed partial class MainWindow : Window, IDisposable
         WindowName = $"HOutfits v{version}{(testBuild ? " (test build)" : "")}###HOutfitsMain";
 
         InitWeaponOverride();
+        InitTarget();
     }
 
-    public void Dispose() => DisposeWeaponOverride();
+    public void Dispose()
+    {
+        DisposeTarget();
+        DisposeWeaponOverride();
+    }
 
     public override void Draw()
     {
@@ -153,6 +158,7 @@ public sealed partial class MainWindow : Window, IDisposable
         // The first time the window draws, start the one-off background scan for name-grouped sets and loose gear.
         _gear.EnsureBuilt();
 
+        DrawTargetBanner();
         DrawSharedHeader();
         DrawOptionsRow();
 
@@ -696,7 +702,7 @@ public sealed partial class MainWindow : Window, IDisposable
             _weaponClass = selected == active ? 0u : selected;   // your own class is "follow me", so a job change keeps up
         }
 
-        var canApply = inGpose || selected == active;
+        var canApply = inGpose || selected == active || Targeting;   // a target takes any class's weapon (game loader)
         var weapons  = index.ByClass[selected];
 
         // Off hands (shields, a crafter's second tool) only exist for some classes; for the others "Off hand" is greyed out.
@@ -718,7 +724,8 @@ public sealed partial class MainWindow : Window, IDisposable
         var filter = Normalize(_weaponFilter);
         var visible = Filtered(source, filter);
         DrawMatchCount(visible.Count, filter);
-        DrawWeaponOverride(ref canApply);
+        if (!Targeting)
+            DrawWeaponOverride(ref canApply);   // the Override is about your own character
 
         if (!canApply)
         {
@@ -1327,13 +1334,23 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
+        if (Targeting && item.IsWeapon)
+        {
+            // Weapons on a target go through the game's loader (any class); a main hand brings its own off-hand model.
+            var loaded = item.Slot == GearSlot.MainHand
+                ? LoadWeaponOnTarget(WeaponSlotOf(ApiEquipSlot.MainHand), item.Model) && LoadWeaponOnTarget(WeaponSlotOf(ApiEquipSlot.OffHand), item.ModelSub)
+                : LoadWeaponOnTarget(WeaponSlotOf(ApiEquipSlot.OffHand), item.Model);
+            SetStatus(loaded, $"Loaded \"{item.Name}\" onto {_targetLabel}.", $"Couldn't load \"{item.Name}\" onto {_targetLabel}.");
+            return;
+        }
+
         var handled = false;
         TryApplyWeaponOverride(item, ref handled);
         if (handled)
             return;
 
         var slot = SlotNames[(int)item.Slot];
-        var ec = _gear.ApplyPiece(item, _glam, 0);
+        var ec = _gear.ApplyPiece(item, _glam, TargetIndex);
         if (ec == GlamourerApiEc.Success)
         {
             SetStatus(true, $"Applied \"{item.Name}\" ({slot}).", string.Empty);
@@ -1703,7 +1720,7 @@ public sealed partial class MainWindow : Window, IDisposable
             return;
         }
 
-        var (applied, failed) = _outfits.Apply(set, _glam, 0, _config.IncludeAccessories);
+        var (applied, failed) = _outfits.Apply(set, _glam, TargetIndex, _config.IncludeAccessories);
         if (applied == 0 && failed == 0)
         {
             // e.g. an accessories-only set while "Include accessories" is off: nothing was attempted.
@@ -1719,7 +1736,7 @@ public sealed partial class MainWindow : Window, IDisposable
     {
         var ok = piece.ItemId == 0
             ? _npcState.ApplyModels(new[] { (piece.Slot, piece.Model) }) == GlamourerApiEc.Success
-            : _outfits.ApplyPiece(piece, _glam, 0);
+            : _outfits.ApplyPiece(piece, _glam, TargetIndex);
         SetStatus(ok,
             $"Applied \"{piece.Name}\" ({piece.Slot}).",
             $"Couldn't apply \"{piece.Name}\" ({piece.Slot}) — see /xllog.");
@@ -1734,11 +1751,17 @@ public sealed partial class MainWindow : Window, IDisposable
             _ => NpcStateBuilder.Mode.Both,
         };
 
-        var ec = _npcState.Apply(npc, mode, _config.IncludeAccessories, _config.NpcIncludeWeapons);
+        // On a target, weapons skip Glamourer's state and go through the game's loader (any class).
+        var weaponsByLoader = Targeting && _config.NpcIncludeWeapons && mode != NpcStateBuilder.Mode.AppearanceOnly;
+        var ec = _npcState.Apply(npc, mode, _config.IncludeAccessories, _config.NpcIncludeWeapons && !weaponsByLoader);
         var ok = ec == Glamourer.Api.Enums.GlamourerApiEc.Success;
+        if (weaponsByLoader)
+            foreach (var piece in npc.Pieces)
+                if (NpcStateBuilder.IsWeapon(piece.Slot) && piece.Model != 0)
+                    LoadWeaponOnTarget(WeaponSlotOf(piece.Slot), NpcWeaponModel(piece));
 
         var namePart = "";
-        if (_config.NpcApplyName && _moniker.Available)
+        if (_config.NpcApplyName && _moniker.Available && !Targeting)   // the Moniker nameplate is yours only
         {
             if (_moniker.SetLocalName(npc.Name))
             {
@@ -1754,6 +1777,12 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void DoApplyNpcPiece(NpcEntry npc, NpcPiece piece)
     {
+        if (Targeting && NpcStateBuilder.IsWeapon(piece.Slot))
+        {
+            var loaded = LoadWeaponOnTarget(WeaponSlotOf(piece.Slot), NpcWeaponModel(piece));
+            SetStatus(loaded, $"Loaded {npc.Name}'s {piece.Slot} ({piece.Label}) onto {_targetLabel}.", "Couldn't load that weapon onto the target.");
+            return;
+        }
         var ec = _npcState.ApplyPiece(npc, piece);
         var ok = ec == Glamourer.Api.Enums.GlamourerApiEc.Success;
         SetStatus(ok,
@@ -1763,8 +1792,14 @@ public sealed partial class MainWindow : Window, IDisposable
 
     private void DoRevert()
     {
-        var ec = _glam.Revert(0);
+        var ec = _glam.Revert(TargetIndex);
         var ok = ec == Glamourer.Api.Enums.GlamourerApiEc.Success;
+        if (Targeting)
+        {
+            RestoreTargetWeapons();   // undo weapons loaded onto it here
+            SetStatus(ok, $"Reverted {_targetLabel} to game state.", $"Revert failed ({ec}), see /xllog.");
+            return;
+        }
 
         if (_appliedNameThisSession && _moniker.Available)
         {

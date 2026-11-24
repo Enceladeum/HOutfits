@@ -82,6 +82,11 @@ Open with `/houtfits`, filter, and:
   nose, jaw, mouth and facial features NPCs with the same face wear, and face paint from any NPC with
   your body, so you can change one part at a time. Values character creation doesn't offer are shown
   in gold. Your skin colour, height and body always stay yours.
+- **Dressing someone else (with HDM).** HDM's **Dress...** button opens HOutfits on one of your
+  puppets: a "Dressing: <name>" line at the top shows who you are dressing, and every set, piece,
+  NPC look, face and Revert goes to that character until you click **Back to me**. Weapons on a
+  puppet load for any class (only what is drawn changes), and the Faces tab follows the puppet's
+  body. HOutfits goes back to dressing you by itself when the puppet goes away or you change zone.
 
 **Scope:** armour, accessories, facewear and weapons. Complete sets (the game's own and the
 ones recovered by name) apply in one click; anything that belongs to no set is on the
@@ -259,6 +264,7 @@ Load `bin/Release/HOutfits.dll` as a dev plugin.
   in a console app). `PlayerContext.cs`: your current class and whether you are in GPose.
 - `NpcService.cs`, `NpcStateBuilder.cs`, `BNpcNameData.cs` — the NPCs tab. `NpcLook.cs`: the item
   behind each NPC piece, who wears each look, and what a body piece hides (the game's EQP table).
+- `MainWindow.Target.cs`: the dressing target (HOutfits.Target.* IPC for HDM's Dress button).
 - `FaceIndex.cs`, `MainWindow.Faces.cs`: the Faces tab (the first has no game or Dalamud types).
   `CreationLimits.cs`: how many choices character creation offers per face part, for the gold marks.
 - `VariantIndex.cs`: the model variants no item uses, read from each model's IMC file.
